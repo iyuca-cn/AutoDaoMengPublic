@@ -1,9 +1,12 @@
 #ignore config
 *.ini
 
+*.exe
+
 #Excel File Storage
 ExcelSource/
-
+.worktrees/
+*.xlsx
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
