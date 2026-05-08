@@ -35,6 +35,14 @@ uv run src/main.py execute --plan /path/to/output/<batch>/plan.json
 uv run src/main.py random-drain --threshold-percent 90 --jitter-count 5 --output logs/random-drain
 ```
 
+直接调用 DMAPI：
+
+```shell
+uv run src/dmapi_cli/main.py activities
+uv run src/dmapi_cli/main.py credit-types --activity-id 1001
+uv run src/dmapi_cli/main.py export-members --activity-id 1001 --type admit --output logs/admit.xlsx
+```
+
 ## 当前版本的重要行为
 
 - 首次运行会按提示创建或补全 `config.ini`。
@@ -42,6 +50,7 @@ uv run src/main.py random-drain --threshold-percent 90 --jitter-count 5 --output
 - 程序默认会尝试连接或启动本地 `DMLocalApi` 服务。
 - `execute` 必须输入精确确认词 `EXECUTE` 才会真正执行。
 - `random-drain` 会逐活动要求输入 `EXECUTE <activityId>` 才会执行该活动。
+- 直接 DMAPI CLI 位于 `src/dmapi_cli/`，会复用 `DMAPI` 的登录态、配置和本地服务管理；`resign`、`send-credit`、`send-credit-signup` 默认要求精确确认。
 
 ## Excel 输入要求
 

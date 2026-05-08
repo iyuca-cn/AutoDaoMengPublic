@@ -19,6 +19,16 @@ api = DMAPI("config.ini")
 activities = api.get_mime_manage_activity_dict()
 ```
 
+如果只想从命令行直接调用这些上层 API，可以使用独立 CLI：
+
+```shell
+uv run src/dmapi_cli/main.py activities
+uv run src/dmapi_cli/main.py sign-list --activity-id 1001 --type signed
+uv run src/dmapi_cli/main.py credit-list --activity-id 1001 --score-id 2001 --kind candidates --json
+```
+
+该 CLI 位于 `src/dmapi_cli/`，复用本页说明的 `DMAPI`，不会绕过它直接访问本地 HTTP 服务。
+
 ## 初始化与本地服务行为
 
 构造函数：
@@ -231,4 +241,6 @@ for activity_id, activity in activities.items():
 - `random_drain`：随机消耗剩余可发名额
 
 它们不会直接访问官方 HTTP 接口，而是统一走本地 `DMLocalApi`。
+
+`src/dmapi_cli/main.py` 是面向人工或脚本的直接操作入口，适合查询活动、签到名单、学分项、导出名单，以及在明确确认后执行补签或发放。它和 `src/main.py` 的批处理工作流相互独立。
 
