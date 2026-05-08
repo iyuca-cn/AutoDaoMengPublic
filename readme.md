@@ -43,6 +43,8 @@ uv run src/dmapi_cli/main.py credit-types --activity-id 1001
 uv run src/dmapi_cli/main.py export-members --activity-id 1001 --type admit --output logs/admit.xlsx
 ```
 
+更多命令、确认词和 JSON 输出说明见 [DMAPI 命令行工具说明](docs/DMAPI命令行工具.md)。
+
 ## 当前版本的重要行为
 
 - 首次运行会按提示创建或补全 `config.ini`。
@@ -50,7 +52,7 @@ uv run src/dmapi_cli/main.py export-members --activity-id 1001 --type admit --ou
 - 程序默认会尝试连接或启动本地 `DMLocalApi` 服务。
 - `execute` 必须输入精确确认词 `EXECUTE` 才会真正执行。
 - `random-drain` 会逐活动要求输入 `EXECUTE <activityId>` 才会执行该活动。
-- 直接 DMAPI CLI 位于 `src/dmapi_cli/`，会复用 `DMAPI` 的登录态、配置和本地服务管理；`resign`、`send-credit`、`send-credit-signup` 默认要求精确确认。
+- 直接 DMAPI CLI 位于 `src/dmapi_cli/`，会复用 `DMAPI` 的登录态、配置和本地服务管理；`resign`、`send-credit`、`send-credit-signup` 默认要求精确确认，确认词形如 `EXECUTE send-credit 1001 2`。
 
 ## Excel 输入要求
 
@@ -82,7 +84,7 @@ uv run src/dmapi_cli/main.py export-members --activity-id 1001 --type admit --ou
 - 可通过环境变量 `DMLOCALAPI_BASE_URL` 指向已运行服务。
 - 可通过环境变量 `DMLOCALAPI_SERVER_EXE` 指定 `dmlocalapi_server.exe`。
 - 可通过环境变量 `DMLOCALAPI_DISABLE_AUTOSTART=1` 禁止自动拉起本地服务。
-- 默认随 `src/dist/dmlocalapi_server.exe` 提供服务端可执行文件。
+- 程序会在 `src/dist/dmlocalapi_server.exe` 等位置查找服务端可执行文件；该文件被 `.gitignore` 忽略，缺失时需要手动下载后放入本地。
 
 下载地址：
 
@@ -109,6 +111,8 @@ uv run src/dmapi_cli/main.py export-members --activity-id 1001 --type admit --ou
 - `final_student_summary.xlsx`
 - `activities/<activityId>_<活动名>/...`
 
+其中 `execution_results.xlsx` 按工作表拆分补签成功、发放成功、执行期不在录取名单、执行期容量冲突、已部分发放、已全部发放和发放最终失败。
+
 `random-drain` 会生成独立时间戳目录，包含：
 
 - `random_drain_summary.xlsx`
@@ -125,6 +129,7 @@ uv run src/dmapi_cli/main.py export-members --activity-id 1001 --type admit --ou
 
 - [配置文件说明](docs/配置文件.md)
 - [DMAPI 说明](<docs/到梦空间python API.md>)
+- [DMAPI 命令行工具说明](docs/DMAPI命令行工具.md)
 - [命令行工作流说明](docs/命令行工作流.md)
 - [日志模块说明](docs/日志模块.md)
 

@@ -2,7 +2,7 @@
 name = "autodaomengpublic"
 version = "0.1.0"
 description = "Automatically check in to the dream space according to Excel"
-readme = "README.md"
+readme = "readme.md"
 requires-python = ">=3.12"
 dependencies = [
     "loguru>=0.7.3",

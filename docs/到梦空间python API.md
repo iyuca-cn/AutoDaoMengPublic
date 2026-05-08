@@ -28,6 +28,7 @@ uv run src/dmapi_cli/main.py credit-list --activity-id 1001 --score-id 2001 --ki
 ```
 
 该 CLI 位于 `src/dmapi_cli/`，复用本页说明的 `DMAPI`，不会绕过它直接访问本地 HTTP 服务。
+完整命令、确认词和退出码见 [DMAPI 命令行工具说明](DMAPI命令行工具.md)。
 
 ## 初始化与本地服务行为
 
@@ -55,16 +56,20 @@ DMAPI(config_path: str)
 
 - `DMLOCALAPI_SERVER_EXE` 环境变量
 - `[local_server].exe_path`
-- `src/main.py` 同目录
+- 当前入口脚本同目录，例如 `src/` 或 `src/dmapi_cli/`
 - 当前工作目录
 - `src/DMAPI/`
 - `src/dist/`
+
+说明：`dmlocalapi_server.exe` 和 `dist/` 默认被 `.gitignore` 忽略。仓库可能只保留代码和文档，运行前需要确认本地已经有可执行文件，或通过 `DMLOCALAPI_SERVER_EXE` 指到实际位置。
 
 如需禁止自动拉起本地服务，可设置：
 
 ```text
 DMLOCALAPI_DISABLE_AUTOSTART=1
 ```
+
+禁止自动启动后，客户端仍会按配置地址连接服务，但不会尝试寻找或启动 `dmlocalapi_server.exe`。
 
 ## 登录流程
 
