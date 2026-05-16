@@ -3,10 +3,6 @@ import { OperationTaskRunner } from "../domain/operationTaskRunner";
 import { HttpError, jsonOk, pathParts, readJson } from "../http";
 import { ensureLocalApiRunning, type RouteContext } from "./context";
 
-interface ExecuteOperationPlanBody {
-  confirmText?: string;
-}
-
 export async function handleOperationPlanRoutes(request: Request, context: RouteContext): Promise<Response | null> {
   const url = new URL(request.url);
   const parts = pathParts(url.pathname);
@@ -49,10 +45,6 @@ export async function handleOperationPlanRoutes(request: Request, context: Route
     if (request.method === "POST" && parts[3] === "execute" && parts.length === 4) {
       await ensureLocalApiRunning(context);
       await context.sessionManager.requireAuthenticated();
-      const body = await readJson<ExecuteOperationPlanBody>(request);
-      if (body.confirmText !== "执行操作计划") {
-        throw new HttpError("确认文本不正确，请输入：执行操作计划", 400, "CONFIRM_TEXT_MISMATCH");
-      }
       const runner = new OperationTaskRunner(context.store, context.localApiClient);
       return jsonOk(await runner.run(plan), { status: 202 });
     }

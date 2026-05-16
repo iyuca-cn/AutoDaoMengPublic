@@ -4,7 +4,6 @@ import { HttpError } from "../http";
 import type { SessionSource, SessionStatus, StoredSession } from "./models";
 
 const EXPORT_URL_PREFIX = "https://apph5.5idream.net/apih5/api/activity/join/export";
-
 export interface LoginInput {
   account: string;
   pwd: string;
@@ -18,6 +17,7 @@ export interface ExportUrlInput {
 
 export class SessionManager {
   private memorySession: StoredSession | null = null;
+  private verifiedSession: { key: string; baseUrl: string } | null = null;
 
   constructor(private readonly store: JsonStore, private readonly client: DmLocalApiClient) {}
 
@@ -30,8 +30,10 @@ export class SessionManager {
       await this.restoreWith(session);
       const verified = { ...session, lastVerifiedAt: new Date().toISOString() };
       await this.replaceSession(session, verified);
+      this.markVerified(verified);
       return publicStatus(verified, true);
     } catch {
+      this.clearVerified(session);
       return publicStatus(session, false);
     }
   }
@@ -45,6 +47,7 @@ export class SessionManager {
     const credentials = await this.client.login(account, pwd);
     const session = buildSession(credentials.uid, credentials.token, "account");
     await this.setSession(session, Boolean(input.persist));
+    this.markVerified(session);
     return publicStatus(session, true);
   }
 
@@ -53,6 +56,7 @@ export class SessionManager {
     const credentials = await this.client.importExportUrl(input.url);
     const session = buildSession(credentials.uid, credentials.token, "exportUrl");
     await this.setSession(session, Boolean(input.persist));
+    this.markVerified(session);
     return publicStatus(session, true);
   }
 
@@ -64,6 +68,7 @@ export class SessionManager {
     await this.restoreWith(session);
     const verified = { ...session, lastVerifiedAt: new Date().toISOString() };
     await this.replaceSession(session, verified);
+    this.markVerified(verified);
     return publicStatus(verified, true);
   }
 
@@ -72,18 +77,24 @@ export class SessionManager {
     if (!session) {
       throw new HttpError("未登录，请先登录", 401, "AUTH_REQUIRED");
     }
+    if (this.isVerified(session)) {
+      return session;
+    }
     try {
       await this.restoreWith(session);
     } catch (error) {
+      this.clearVerified(session);
       throw new HttpError("登录态已失效，请重新登录", 401, "AUTH_EXPIRED", summarizeAuthError(error));
     }
     const verified = { ...session, lastVerifiedAt: new Date().toISOString() };
     await this.replaceSession(session, verified);
+    this.markVerified(verified);
     return verified;
   }
 
   async logout(): Promise<SessionStatus> {
     this.memorySession = null;
+    this.verifiedSession = null;
     await this.store.deleteSession();
     return { authenticated: false };
   }
@@ -116,6 +127,31 @@ export class SessionManager {
     await this.client.restoreSession(session.uid, session.token);
     await this.client.getManagedActivities();
   }
+
+  private isVerified(session: StoredSession): boolean {
+    return Boolean(
+      this.verifiedSession
+        && this.verifiedSession.key === sessionKey(session)
+        && this.verifiedSession.baseUrl === this.client.baseUrl,
+    );
+  }
+
+  private markVerified(session: StoredSession): void {
+    this.verifiedSession = {
+      key: sessionKey(session),
+      baseUrl: this.client.baseUrl,
+    };
+  }
+
+  private clearVerified(session: StoredSession): void {
+    if (this.verifiedSession?.key === sessionKey(session)) {
+      this.verifiedSession = null;
+    }
+  }
+}
+
+function sessionKey(session: StoredSession): string {
+  return `${session.uid}:${session.token}`;
 }
 
 function summarizeAuthError(error: unknown): Record<string, unknown> | undefined {

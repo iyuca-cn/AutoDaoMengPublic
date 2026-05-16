@@ -30,8 +30,10 @@ export class TaskRunner {
       status: "running",
       auditLogs: [...storedPlan.auditLogs, createAuditLog("plan.execution.started", { taskId: task.id }, "user")],
     }));
+    const events = taskEventWriter(task, this.store);
     try {
-      const result = await executePlan(this.client, plan, asyncMessage(task, this.store));
+      const result = await executePlan(this.client, plan, events.push);
+      await events.flush();
       const completed = await this.store.update("tasks", task.id, (storedTask) => ({
         ...storedTask,
         status: "completed",
@@ -46,6 +48,7 @@ export class TaskRunner {
       }));
       return completed;
     } catch (error) {
+      await events.flush();
       const failed = await this.store.update("tasks", task.id, (storedTask) => ({
         ...storedTask,
         status: "failed",
@@ -62,12 +65,18 @@ export class TaskRunner {
   }
 }
 
-function asyncMessage(task: ExecutionTask, store: JsonStore): (message: string) => void {
-  return (message: string) => {
-    void store.update("tasks", task.id, (storedTask) => ({
-      ...storedTask,
-      updatedAt: new Date().toISOString(),
-      events: [...storedTask.events, { time: new Date().toISOString(), level: "info", message }],
-    }));
+function taskEventWriter(task: ExecutionTask, store: JsonStore): { push: (message: string) => void; flush: () => Promise<void> } {
+  let pending = Promise.resolve();
+  return {
+    push(message: string) {
+      pending = pending.then(() => store.update("tasks", task.id, (storedTask) => ({
+        ...storedTask,
+        updatedAt: new Date().toISOString(),
+        events: [...storedTask.events, { time: new Date().toISOString(), level: "info", message }],
+      }))).then(() => undefined);
+    },
+    flush() {
+      return pending;
+    },
   };
 }

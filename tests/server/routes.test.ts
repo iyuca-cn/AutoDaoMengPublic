@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../../server/config";
 import { SessionManager } from "../../server/domain/session";
 import { routeRequest } from "../../server/routes/router";
@@ -64,6 +64,49 @@ describe("routes", () => {
     expect(precheck.status).toBe(200);
   });
 
+  it("executes operation plans without confirm text after precheck", async () => {
+    const context = createTestContext();
+    await routeRequest(jsonRequest("http://local/api/session/login", {
+      account: "alice",
+      pwd: "secret",
+      persist: false,
+    }), context);
+    const created = await routeRequest(jsonRequest("http://local/api/operation-plans", {
+      kind: "resign",
+      activityId: "activity-1",
+      activityName: "活动一",
+      members: [{ studentName: "张三", signUpId: "signup-1", userId: "user-1" }],
+    }), context);
+    const body = await created.json() as { data: { id: string } };
+    await routeRequest(new Request(`http://local/api/operation-plans/${body.data.id}/precheck`, { method: "POST" }), context);
+
+    const executed = await routeRequest(jsonRequest(`http://local/api/operation-plans/${body.data.id}/execute`, {}), context);
+    const executedBody = await executed.json() as { data: { status: string; targetType: string } };
+
+    expect(executed.status).toBe(202);
+    expect(executedBody.data).toMatchObject({ status: "completed", targetType: "operationPlan" });
+  });
+
+  it("does not restore the current session again when prechecking after login", async () => {
+    const context = createTestContext();
+    await routeRequest(jsonRequest("http://local/api/session/login", {
+      account: "alice",
+      pwd: "secret",
+      persist: false,
+    }), context);
+    const created = await routeRequest(jsonRequest("http://local/api/operation-plans", {
+      kind: "resign",
+      activityId: "activity-1",
+      activityName: "活动一",
+      members: [{ studentName: "张三", signUpId: "signup-1", userId: "user-1" }],
+    }), context);
+    const body = await created.json() as { data: { id: string } };
+
+    await routeRequest(new Request(`http://local/api/operation-plans/${body.data.id}/precheck`, { method: "POST" }), context);
+
+    expect(context.localApiClient.restoreSession).not.toHaveBeenCalled();
+  });
+
   it("deletes editable operation plans", async () => {
     const context = createTestContext();
     await routeRequest(jsonRequest("http://local/api/session/login", {
@@ -106,13 +149,16 @@ function createTestContext(): RouteContext {
   const config = loadConfig({ DMLOCALAPI_DISABLE_AUTOSTART: "1", DATA_DIR: dataDir });
   const store = new JsonStore(config.dataDir);
   const localApiClient = {
+    baseUrl: config.localApi.baseUrl,
     setBaseUrl: () => undefined,
     login: async () => ({ uid: "uid-1", token: "token-1" }),
-    restoreSession: async () => true,
+    restoreSession: vi.fn(async () => true),
     getManagedActivities: async () => ({ "activity-1": { activityId: "activity-1", name: "活动一" } }),
     getSignCard: async () => "card-1",
     getSignList: async () => [{ signUpId: "signup-1", userId: "user-1", studentName: "张三" }],
     getCreditList: async () => [],
+    resign: async () => true,
+    sendCredit: async () => true,
   } as unknown as DmLocalApiClient;
   return {
     config,

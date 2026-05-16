@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionManager, validateExportUrl } from "../../server/domain/session";
 import type { DmLocalApiClient } from "../../server/local-api/client";
 import { JsonStore } from "../../server/storage/jsonStore";
@@ -37,6 +37,28 @@ describe("SessionManager", () => {
     expect(await manager.currentSession()).toMatchObject({ uid: "uid-1", token: "token-1" });
   });
 
+  it("does not restore again after the current session has been verified", async () => {
+    const client = fakeClient();
+    const manager = new SessionManager(new JsonStore(dir), client);
+    await manager.loginWithAccount({ account: "alice", pwd: "secret", persist: false });
+    await manager.requireAuthenticated();
+
+    expect(client.restoreSession).not.toHaveBeenCalled();
+  });
+
+  it("restores persisted sessions once before marking them verified", async () => {
+    const client = fakeClient();
+    const store = new JsonStore(dir);
+    const manager = new SessionManager(store, client);
+    await manager.loginWithAccount({ account: "alice", pwd: "secret", persist: true });
+    const restoredManager = new SessionManager(store, client);
+
+    await restoredManager.requireAuthenticated();
+    await restoredManager.requireAuthenticated();
+
+    expect(client.restoreSession).toHaveBeenCalledTimes(1);
+  });
+
   it("validates export urls", () => {
     expect(validateExportUrl("https://apph5.5idream.net/apih5/api/activity/join/export?activityid=1&api_token=t").searchParams.get("api_token")).toBe("t");
     expect(() => validateExportUrl("https://example.com/export?activityid=1&api_token=t")).toThrow("导出 URL 必须来自管理活动人员导出入口");
@@ -44,11 +66,12 @@ describe("SessionManager", () => {
   });
 });
 
-function fakeClient(): DmLocalApiClient {
+function fakeClient(): DmLocalApiClient & { restoreSession: ReturnType<typeof vi.fn> } {
   return {
+    baseUrl: "http://127.0.0.1:18080",
     login: async () => ({ uid: "uid-1", token: "token-1" }),
     importExportUrl: async () => ({ uid: "uid-url", token: "token-url" }),
-    restoreSession: async () => true,
+    restoreSession: vi.fn(async () => true),
     getManagedActivities: async () => ({}),
-  } as unknown as DmLocalApiClient;
+  } as unknown as DmLocalApiClient & { restoreSession: ReturnType<typeof vi.fn> };
 }

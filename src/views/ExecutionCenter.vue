@@ -30,10 +30,6 @@
             <ShieldCheck class="h-4 w-4" />
             运行预检
           </button>
-          <label class="grid gap-1">
-            <span class="label">确认文本</span>
-            <input class="field" v-model="confirmText" :placeholder="`输入 ${requiredConfirmText}`" />
-          </label>
           <button class="danger-button justify-center" type="button" :disabled="!canExecute" @click="execute">
             <PlayCircle class="h-4 w-4" />
             确认执行
@@ -60,7 +56,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { Download, PlayCircle, RefreshCw, ShieldCheck } from "lucide-vue-next";
 import { apiGet, apiPost, downloadUrl } from "../api";
 import ExecutionPrecheck from "../components/ExecutionPrecheck.vue";
@@ -72,8 +68,8 @@ const plans = ref<Plan[]>([]);
 const operationPlans = ref<OperationPlan[]>([]);
 const selectedPlanId = ref("");
 const precheck = ref<{ executable: boolean; actionCount: number; issues: Array<{ level: string; code: string; message: string }> } | null>(null);
+const precheckedPlanKey = ref("");
 const task = ref<ExecutionTask | null>(null);
-const confirmText = ref("");
 const running = ref(false);
 const error = ref("");
 
@@ -88,10 +84,20 @@ const executablePlans = computed<ExecutablePlanOption[]>(() => [
     .map((plan) => ({ key: `operation:${plan.id}`, id: plan.id, type: "operation" as const, label: `操作 · ${plan.name}`, status: plan.status })),
 ]);
 const selectedPlan = computed(() => executablePlans.value.find((plan) => plan.key === selectedPlanId.value) ?? null);
-const requiredConfirmText = computed(() => selectedPlan.value?.type === "operation" ? "执行操作计划" : "执行计划");
-const canExecute = computed(() => Boolean(selectedPlan.value && precheck.value?.executable && confirmText.value === requiredConfirmText.value && !running.value));
+const canExecute = computed(() => Boolean(
+  selectedPlan.value
+    && precheck.value?.executable
+    && precheckedPlanKey.value === selectedPlan.value.key
+    && !running.value,
+));
 
 onMounted(load);
+
+watch(selectedPlanId, () => {
+  precheck.value = null;
+  precheckedPlanKey.value = "";
+  task.value = null;
+});
 
 async function load() {
   error.value = "";
@@ -118,6 +124,7 @@ async function runPrecheck() {
       ? `/api/operation-plans/${selectedPlan.value.id}/precheck`
       : `/api/plans/${selectedPlan.value.id}/precheck`;
     precheck.value = await apiPost(path);
+    precheckedPlanKey.value = selectedPlan.value.key;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
@@ -129,19 +136,29 @@ async function execute() {
   if (!canExecute.value || !selectedPlan.value) {
     return;
   }
+  if (!confirmExecution(selectedPlan.value)) {
+    return;
+  }
   running.value = true;
   error.value = "";
   try {
     const path = selectedPlan.value.type === "operation"
       ? `/api/operation-plans/${selectedPlan.value.id}/execute`
       : `/api/plans/${selectedPlan.value.id}/execute`;
-    const body = selectedPlan.value.type === "operation" ? { confirmText: "执行操作计划" } : undefined;
-    task.value = await apiPost<ExecutionTask>(path, body);
+    task.value = await apiPost<ExecutionTask>(path);
     await load();
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
     running.value = false;
   }
+}
+
+function confirmExecution(plan: ExecutablePlanOption): boolean {
+  const firstConfirmed = window.confirm(`确认执行「${plan.label}」？`);
+  if (!firstConfirmed) {
+    return false;
+  }
+  return window.confirm("再次确认：执行会提交线上写操作，是否继续？");
 }
 </script>
