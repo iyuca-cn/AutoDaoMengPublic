@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.local
+data/
+logs/
+reports/
+playwright-report/
+test-results/
+*.log
+*.tmp
+bun.lockb
