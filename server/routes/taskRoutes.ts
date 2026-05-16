@@ -10,6 +10,7 @@ export async function handleTaskRoutes(request: Request, context: RouteContext):
   }
   if (parts[0] === "api" && parts[1] === "plans" && parts[2] && parts[3] === "precheck" && request.method === "POST") {
     await ensureLocalApiRunning(context);
+    await context.sessionManager.requireAuthenticated();
     const plan = await context.store.read("plans", parts[2]);
     if (!plan) {
       throw new HttpError("计划不存在", 404, "PLAN_NOT_FOUND");
@@ -19,6 +20,7 @@ export async function handleTaskRoutes(request: Request, context: RouteContext):
   }
   if (parts[0] === "api" && parts[1] === "plans" && parts[2] && parts[3] === "execute" && request.method === "POST") {
     await ensureLocalApiRunning(context);
+    await context.sessionManager.requireAuthenticated();
     const plan = await context.store.read("plans", parts[2]);
     if (!plan) {
       throw new HttpError("计划不存在", 404, "PLAN_NOT_FOUND");

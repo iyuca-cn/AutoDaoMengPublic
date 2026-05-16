@@ -64,6 +64,7 @@ export async function handleImportRoutes(request: Request, context: RouteContext
 
     if (request.method === "POST" && parts[3] === "generate-plan") {
       await ensureLocalApiRunning(context);
+      await context.sessionManager.requireAuthenticated();
       const body = await maybeJson<GeneratePlanBody>(request);
       const plan = await generatePlanFromImport(context.store, context.localApiClient, id, body);
       return jsonOk(plan, { status: 201 });

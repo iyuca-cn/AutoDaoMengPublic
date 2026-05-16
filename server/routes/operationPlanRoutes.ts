@@ -33,6 +33,13 @@ export async function handleOperationPlanRoutes(request: Request, context: Route
       const body = await readJson<PatchOperationPlanInput>(request);
       return jsonOk(await context.store.update("operation-plans", id, (storedPlan) => patchOperationPlan(storedPlan, body)));
     }
+    if (request.method === "DELETE" && parts.length === 3) {
+      if (!["draft", "ready", "failed", "cancelled"].includes(plan.status)) {
+        throw new HttpError("执行中或已完成的操作计划不能删除", 409, "OPERATION_PLAN_LOCKED");
+      }
+      await context.store.delete("operation-plans", id);
+      return jsonOk({ deleted: true });
+    }
     if (request.method === "POST" && parts[3] === "precheck" && parts.length === 4) {
       await ensureLocalApiRunning(context);
       await context.sessionManager.requireAuthenticated();

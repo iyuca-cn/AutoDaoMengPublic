@@ -1,5 +1,6 @@
 import type { DmLocalApiClient } from "../local-api/client";
 import type { JsonStore } from "../storage/jsonStore";
+import { HttpError } from "../http";
 import type { SessionSource, SessionStatus, StoredSession } from "./models";
 
 const EXPORT_URL_PREFIX = "https://apph5.5idream.net/apih5/api/activity/join/export";
@@ -69,9 +70,13 @@ export class SessionManager {
   async requireAuthenticated(): Promise<StoredSession> {
     const session = await this.currentSession();
     if (!session) {
-      throw new Error("未登录，请先登录");
+      throw new HttpError("未登录，请先登录", 401, "AUTH_REQUIRED");
     }
-    await this.restoreWith(session);
+    try {
+      await this.restoreWith(session);
+    } catch (error) {
+      throw new HttpError("登录态已失效，请重新登录", 401, "AUTH_EXPIRED", summarizeAuthError(error));
+    }
     const verified = { ...session, lastVerifiedAt: new Date().toISOString() };
     await this.replaceSession(session, verified);
     return verified;
@@ -111,6 +116,16 @@ export class SessionManager {
     await this.client.restoreSession(session.uid, session.token);
     await this.client.getManagedActivities();
   }
+}
+
+function summarizeAuthError(error: unknown): Record<string, unknown> | undefined {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+    };
+  }
+  return undefined;
 }
 
 export function validateExportUrl(value: string): URL {

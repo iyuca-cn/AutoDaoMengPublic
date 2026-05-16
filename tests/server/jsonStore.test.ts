@@ -35,5 +35,7 @@ describe("JsonStore", () => {
     const updated = await store.read("imports", "batch-1");
     expect(updated?.filename).toBe("next.xlsx");
     expect(updated?.auditLogs).toHaveLength(1);
+    await store.delete("imports", "batch-1");
+    expect(await store.read("imports", "batch-1")).toBeNull();
   });
 });

@@ -62,11 +62,12 @@ export function patchOperationPlan(plan: OperationPlan, input: PatchOperationPla
   if (!["draft", "ready"].includes(plan.status)) {
     throw new Error("已执行或执行中的操作计划不能直接修改，请复制为新计划");
   }
+  const name = input.name?.trim();
   const actions = input.actions ? input.actions.map(normalizePatchedAction) : plan.actions;
   return {
     ...plan,
-    name: input.name ?? plan.name,
-    status: input.status ?? plan.status,
+    name: name || plan.name,
+    status: input.status ?? (plan.status === "draft" ? "ready" : plan.status),
     actions,
     summary: buildOperationPlanSummary(actions),
     updatedAt: new Date().toISOString(),

@@ -3,7 +3,7 @@
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h3 class="font-semibold">生成操作计划</h3>
-        <p class="mt-1 text-sm text-slate-600">已选 {{ selectedMembers.length }} 人，{{ selectedCreditItems.length }} 个学分项。</p>
+        <p class="mt-1 text-sm text-slate-600">计划人员 {{ effectiveMembers.length }} 人，学分项 {{ effectiveCreditItems.length }} 个。</p>
       </div>
       <div class="flex flex-wrap gap-2">
         <button class="text-button" type="button" :disabled="!canResign || loading" @click="create('resign')">
@@ -44,8 +44,10 @@ const emit = defineEmits<{
 const loading = ref(false);
 const error = ref("");
 const message = ref("");
-const canResign = computed(() => props.selectedMembers.length > 0);
-const canIssue = computed(() => props.selectedMembers.length > 0 && props.selectedCreditItems.length > 0);
+const effectiveMembers = computed(() => props.selectedMembers.length > 0 ? props.selectedMembers : selectableMembers(props.detail));
+const effectiveCreditItems = computed(() => props.selectedCreditItems.length > 0 ? props.selectedCreditItems : props.detail.creditItems);
+const canResign = computed(() => effectiveMembers.value.length > 0);
+const canIssue = computed(() => effectiveMembers.value.length > 0 && effectiveCreditItems.value.length > 0);
 
 async function create(kind: OperationKind) {
   loading.value = true;
@@ -56,8 +58,8 @@ async function create(kind: OperationKind) {
       kind,
       activityId: props.detail.activityId,
       activityName: props.detail.activityName,
-      members: props.selectedMembers,
-      creditItems: props.selectedCreditItems,
+      members: effectiveMembers.value,
+      creditItems: kind === "resign" ? [] : effectiveCreditItems.value,
     });
     message.value = `已生成：${plan.name}`;
     emit("created", plan);
@@ -66,5 +68,26 @@ async function create(kind: OperationKind) {
   } finally {
     loading.value = false;
   }
+}
+
+function selectableMembers(detail: ActivityDetail): ActivityPersonRow[] {
+  const rows = [
+    ...Object.values(detail.signLists).flat(),
+    ...Object.values(detail.memberLists).flat(),
+  ];
+  const byKey = new Map<string, ActivityPersonRow>();
+  for (const row of rows) {
+    if (!row.signUpId) {
+      continue;
+    }
+    const existing = byKey.get(row.signUpId);
+    byKey.set(row.signUpId, {
+      ...existing,
+      ...row,
+      signStatus: existing?.signStatus ?? row.signStatus,
+      admitStatus: existing?.admitStatus ?? row.admitStatus,
+    });
+  }
+  return [...byKey.values()];
 }
 </script>

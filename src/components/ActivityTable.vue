@@ -12,10 +12,11 @@
           <th>学分项</th>
           <th>已发</th>
           <th>容量</th>
+          <th>操作</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-line">
-        <tr v-for="item in items" :key="item.activityId" class="cursor-pointer hover:bg-mint/40" @click="$emit('open', item.activityId)">
+        <tr v-for="item in items" :key="item.activityId" class="hover:bg-mint/40">
           <td>
             <input
               class="h-4 w-4 accent-moss"
@@ -58,9 +59,14 @@
           <td>
             <span>{{ capacityTotal(item) }}</span>
           </td>
+          <td>
+            <button class="text-button min-h-8 px-2 py-1 text-xs" type="button" @click="$emit('open', item.activityId)">
+              详情
+            </button>
+          </td>
         </tr>
         <tr v-if="items.length === 0">
-          <td colspan="7" class="py-8 text-center text-slate-500">暂无活动数据</td>
+          <td colspan="8" class="py-8 text-center text-slate-500">暂无活动数据</td>
         </tr>
       </tbody>
     </table>

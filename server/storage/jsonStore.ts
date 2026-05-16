@@ -54,6 +54,10 @@ export class JsonStore {
     return updated;
   }
 
+  async delete<K extends CollectionName>(collection: K, id: string): Promise<void> {
+    await rm(this.filePath(collection, id), { force: true });
+  }
+
   async appendAudit<K extends "imports" | "plans" | "operation-plans">(collection: K, id: string, entry: AuditLogEntry): Promise<EntityMap[K]> {
     return this.update(collection, id, (entity) => ({
       ...entity,

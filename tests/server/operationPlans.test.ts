@@ -97,5 +97,19 @@ describe("operation plans", () => {
     });
     expect(patched.summary.enabledCount).toBe(0);
     expect(patched.actions[0].status).toBe("disabled");
+    expect(patched.status).toBe("ready");
+  });
+
+  it("patches operation plan names", () => {
+    const plan = createOperationPlan({
+      kind: "resign",
+      activityId: "activity-1",
+      activityName: "活动一",
+      members: [member],
+    });
+
+    const patched = patchOperationPlan(plan, { name: "  新标题  " });
+
+    expect(patched.name).toBe("新标题");
   });
 });

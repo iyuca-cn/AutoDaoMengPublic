@@ -8,9 +8,17 @@ export interface ApiResult<T> {
   };
 }
 
+export interface ApiUnauthorizedEventDetail {
+  path: string;
+  message: string;
+  code: string;
+}
+
+export const API_UNAUTHORIZED_EVENT = "daomeng:api-unauthorized";
+
 export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(path);
-  return readResponse<T>(response);
+  return readResponse<T>(response, path);
 }
 
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
@@ -19,7 +27,7 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
     headers: body instanceof FormData ? undefined : { "content-type": "application/json" },
     body: body instanceof FormData ? body : JSON.stringify(body ?? {}),
   });
-  return readResponse<T>(response);
+  return readResponse<T>(response, path);
 }
 
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
@@ -28,17 +36,17 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  return readResponse<T>(response);
+  return readResponse<T>(response, path);
 }
 
 export async function apiDelete<T>(path: string): Promise<T> {
   const response = await fetch(path, {
     method: "DELETE",
   });
-  return readResponse<T>(response);
+  return readResponse<T>(response, path);
 }
 
-async function readResponse<T>(response: Response): Promise<T> {
+async function readResponse<T>(response: Response, path: string): Promise<T> {
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {
     const text = await response.text().catch(() => "");
@@ -46,7 +54,17 @@ async function readResponse<T>(response: Response): Promise<T> {
   }
   const payload = (await response.json()) as ApiResult<T>;
   if (!response.ok || !payload.success) {
-    throw new Error(payload.error?.message || `HTTP ${response.status}`);
+    const message = payload.error?.message || `HTTP ${response.status}`;
+    if (response.status === 401 && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent<ApiUnauthorizedEventDetail>(API_UNAUTHORIZED_EVENT, {
+        detail: {
+          path,
+          message,
+          code: payload.error?.code || "UNAUTHORIZED",
+        },
+      }));
+    }
+    throw new Error(message);
   }
   return payload.data as T;
 }

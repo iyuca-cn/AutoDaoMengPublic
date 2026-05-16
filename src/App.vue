@@ -29,9 +29,14 @@
 
     <main class="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
       <LoginView v-if="!session.authenticated" @authenticated="onAuthenticated" />
-      <ActivityOverview v-else-if="activeView === 'activities'" @open-plans="activeView = 'plans'" />
+      <ActivityOverview v-else-if="activeView === 'activities'" @open-plans="openPlans" />
       <ImportCenter v-else-if="activeView === 'imports'" @plan-created="activeView = 'plans'" />
-      <PlanCenter v-else-if="activeView === 'plans'" />
+      <PlanCenter
+        v-else-if="activeView === 'plans'"
+        :open-operation-plan-id="openOperationPlanId"
+        :initial-plan-type="initialPlanType"
+        @opened-operation-plan="openOperationPlanId = null"
+      />
       <ExecutionCenter v-else-if="activeView === 'execution'" />
       <RandomDrainView v-else-if="activeView === 'random'" />
       <SettingsView v-else />
@@ -40,9 +45,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { LogOut } from "lucide-vue-next";
-import { apiDelete, apiGet } from "./api";
+import { API_UNAUTHORIZED_EVENT, apiDelete, apiGet, type ApiUnauthorizedEventDetail } from "./api";
 import AppNav from "./components/AppNav.vue";
 import ActivityOverview from "./views/ActivityOverview.vue";
 import ExecutionCenter from "./views/ExecutionCenter.vue";
@@ -54,10 +59,14 @@ import SettingsView from "./views/SettingsView.vue";
 import type { SessionSource, SessionStatus } from "./types";
 
 const activeView = ref("activities");
+const returnViewAfterLogin = ref<string | null>(null);
+const openOperationPlanId = ref<string | null>(null);
+const initialPlanType = ref<"credit" | "operation" | null>(null);
 const healthOk = ref(false);
 const session = ref<SessionStatus>({ authenticated: false });
 
 onMounted(async () => {
+  window.addEventListener(API_UNAUTHORIZED_EVENT, onUnauthorized as EventListener);
   try {
     await apiGet("/api/health");
     healthOk.value = true;
@@ -65,6 +74,10 @@ onMounted(async () => {
     healthOk.value = false;
   }
   await loadSession();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener(API_UNAUTHORIZED_EVENT, onUnauthorized as EventListener);
 });
 
 async function loadSession() {
@@ -77,12 +90,31 @@ async function loadSession() {
 
 function onAuthenticated(status: SessionStatus) {
   session.value = status;
-  activeView.value = "activities";
+  activeView.value = returnViewAfterLogin.value ?? "activities";
+  returnViewAfterLogin.value = null;
 }
 
 async function logout() {
   session.value = await apiDelete<SessionStatus>("/api/session");
   activeView.value = "activities";
+  returnViewAfterLogin.value = null;
+  openOperationPlanId.value = null;
+}
+
+function openPlans(plan?: { id?: string }) {
+  openOperationPlanId.value = plan?.id ?? null;
+  initialPlanType.value = "operation";
+  activeView.value = "plans";
+}
+
+function onUnauthorized(event: CustomEvent<ApiUnauthorizedEventDetail>) {
+  if (event.detail.path.startsWith("/api/session/")) {
+    return;
+  }
+  if (session.value.authenticated) {
+    returnViewAfterLogin.value = activeView.value;
+  }
+  session.value = { authenticated: false };
 }
 
 function sourceLabel(source?: SessionSource): string {
