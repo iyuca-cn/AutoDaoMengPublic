@@ -11,3 +11,9 @@ export interface RouteContext {
   localApiProcessManager: LocalApiProcessManager;
   sessionManager: SessionManager;
 }
+
+export async function ensureLocalApiRunning(context: RouteContext): Promise<string> {
+  const baseUrl = await context.localApiProcessManager.ensureRunning();
+  context.localApiClient.setBaseUrl(baseUrl);
+  return baseUrl;
+}

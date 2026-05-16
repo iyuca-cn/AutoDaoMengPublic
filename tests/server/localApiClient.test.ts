@@ -28,4 +28,18 @@ describe("DmLocalApiClient", () => {
     const client = new DmLocalApiClient("http://127.0.0.1:8765", async () => Response.json({ success: false, error: { code: "BAD", message: "坏了" } }, { status: 400 }));
     await expect(client.getManagedActivities()).rejects.toThrow("坏了");
   });
+
+  it("uses updated base URL after the local proxy starts on another port", async () => {
+    const calls: string[] = [];
+    const client = new DmLocalApiClient("http://127.0.0.1:8765", async (input) => {
+      calls.push(String(input));
+      return Response.json({ success: true, data: { uid: "uid-1", token: "token-1" } });
+    });
+
+    client.setBaseUrl("http://127.0.0.1:8766/");
+    await client.login("alice", "secret");
+
+    expect(client.baseUrl).toBe("http://127.0.0.1:8766");
+    expect(calls).toEqual(["http://127.0.0.1:8766/session/login"]);
+  });
 });

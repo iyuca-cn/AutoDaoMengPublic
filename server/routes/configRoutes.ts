@@ -1,5 +1,5 @@
 import { jsonOk } from "../http";
-import type { RouteContext } from "./context";
+import { ensureLocalApiRunning, type RouteContext } from "./context";
 
 export async function handleConfigRoutes(request: Request, context: RouteContext): Promise<Response | null> {
   const url = new URL(request.url);
@@ -14,7 +14,7 @@ export async function handleConfigRoutes(request: Request, context: RouteContext
     });
   }
   if (request.method === "POST" && url.pathname === "/api/local-api/start") {
-    const baseUrl = await context.localApiProcessManager.ensureRunning();
+    const baseUrl = await ensureLocalApiRunning(context);
     return jsonOk({ baseUrl });
   }
   return null;

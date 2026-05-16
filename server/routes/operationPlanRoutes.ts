@@ -1,7 +1,7 @@
 import { createOperationPlan, patchOperationPlan, type CreateOperationPlanInput, type PatchOperationPlanInput } from "../domain/operationPlans";
 import { OperationTaskRunner } from "../domain/operationTaskRunner";
 import { HttpError, jsonOk, pathParts, readJson } from "../http";
-import type { RouteContext } from "./context";
+import { ensureLocalApiRunning, type RouteContext } from "./context";
 
 interface ExecuteOperationPlanBody {
   confirmText?: string;
@@ -34,13 +34,13 @@ export async function handleOperationPlanRoutes(request: Request, context: Route
       return jsonOk(await context.store.update("operation-plans", id, (storedPlan) => patchOperationPlan(storedPlan, body)));
     }
     if (request.method === "POST" && parts[3] === "precheck" && parts.length === 4) {
-      await context.localApiProcessManager.ensureRunning();
+      await ensureLocalApiRunning(context);
       await context.sessionManager.requireAuthenticated();
       const runner = new OperationTaskRunner(context.store, context.localApiClient);
       return jsonOk(await runner.precheck(plan));
     }
     if (request.method === "POST" && parts[3] === "execute" && parts.length === 4) {
-      await context.localApiProcessManager.ensureRunning();
+      await ensureLocalApiRunning(context);
       await context.sessionManager.requireAuthenticated();
       const body = await readJson<ExecuteOperationPlanBody>(request);
       if (body.confirmText !== "执行操作计划") {

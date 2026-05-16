@@ -37,12 +37,20 @@ type JsonRecord = Record<string, unknown>;
 const SENSITIVE_KEYS = new Set(["uid", "token", "api_token", "pwd", "account"]);
 
 export class DmLocalApiClient {
-  readonly baseUrl: string;
+  private currentBaseUrl: string;
   private readonly fetcher: FetchLike;
 
   constructor(baseUrl: string, fetcher: FetchLike = fetch) {
-    this.baseUrl = baseUrl.replace(/\/+$/, "");
+    this.currentBaseUrl = normalizeBaseUrl(baseUrl);
     this.fetcher = fetcher;
+  }
+
+  get baseUrl(): string {
+    return this.currentBaseUrl;
+  }
+
+  setBaseUrl(baseUrl: string): void {
+    this.currentBaseUrl = normalizeBaseUrl(baseUrl);
   }
 
   async health(): Promise<unknown> {
@@ -172,7 +180,7 @@ export class DmLocalApiClient {
   }
 
   private buildUrl(path: string, params?: JsonRecord): string {
-    const url = new URL(path, `${this.baseUrl}/`);
+    const url = new URL(path, `${this.currentBaseUrl}/`);
     if (params) {
       for (const [key, value] of Object.entries(params)) {
         if (value !== undefined && value !== null) {
@@ -225,6 +233,10 @@ export class DmLocalApiClient {
       details,
     });
   }
+}
+
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, "");
 }
 
 function maskSecret(value: unknown): string {

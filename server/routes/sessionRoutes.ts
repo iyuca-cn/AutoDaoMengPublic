@@ -1,5 +1,5 @@
 import { HttpError, jsonOk, readJson } from "../http";
-import type { RouteContext } from "./context";
+import { ensureLocalApiRunning, type RouteContext } from "./context";
 
 interface LoginBody {
   account?: string;
@@ -15,11 +15,11 @@ interface ExportUrlBody {
 export async function handleSessionRoutes(request: Request, context: RouteContext): Promise<Response | null> {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/api/session") {
-    await context.localApiProcessManager.ensureRunning();
+    await ensureLocalApiRunning(context);
     return jsonOk(await context.sessionManager.status());
   }
   if (request.method === "POST" && url.pathname === "/api/session/login") {
-    await context.localApiProcessManager.ensureRunning();
+    await ensureLocalApiRunning(context);
     const body = await readJson<LoginBody>(request);
     return jsonOk(await context.sessionManager.loginWithAccount({
       account: body.account ?? "",
@@ -28,7 +28,7 @@ export async function handleSessionRoutes(request: Request, context: RouteContex
     }));
   }
   if (request.method === "POST" && url.pathname === "/api/session/import-export-url") {
-    await context.localApiProcessManager.ensureRunning();
+    await ensureLocalApiRunning(context);
     const body = await readJson<ExportUrlBody>(request);
     if (!body.url) {
       throw new HttpError("导出 URL 不能为空", 400, "EXPORT_URL_REQUIRED");
@@ -39,7 +39,7 @@ export async function handleSessionRoutes(request: Request, context: RouteContex
     }));
   }
   if (request.method === "POST" && url.pathname === "/api/session/restore") {
-    await context.localApiProcessManager.ensureRunning();
+    await ensureLocalApiRunning(context);
     return jsonOk(await context.sessionManager.restore());
   }
   if (request.method === "DELETE" && url.pathname === "/api/session") {

@@ -58,6 +58,7 @@ function createTestContext(): RouteContext {
   const config = loadConfig({ DMLOCALAPI_DISABLE_AUTOSTART: "1", DATA_DIR: "./data-test-routes" });
   const store = new JsonStore(config.dataDir);
   const localApiClient = {
+    setBaseUrl: () => undefined,
     login: async () => ({ uid: "uid-1", token: "token-1" }),
     restoreSession: async () => true,
     getManagedActivities: async () => ({ "activity-1": { activityId: "activity-1", name: "活动一" } }),

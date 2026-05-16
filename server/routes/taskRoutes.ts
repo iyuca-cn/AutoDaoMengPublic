@@ -1,6 +1,6 @@
 import { TaskRunner } from "../domain/taskRunner";
 import { HttpError, jsonOk, pathParts } from "../http";
-import type { RouteContext } from "./context";
+import { ensureLocalApiRunning, type RouteContext } from "./context";
 
 export async function handleTaskRoutes(request: Request, context: RouteContext): Promise<Response | null> {
   const url = new URL(request.url);
@@ -9,7 +9,7 @@ export async function handleTaskRoutes(request: Request, context: RouteContext):
     return jsonOk(await context.store.list("tasks"));
   }
   if (parts[0] === "api" && parts[1] === "plans" && parts[2] && parts[3] === "precheck" && request.method === "POST") {
-    await context.localApiProcessManager.ensureRunning();
+    await ensureLocalApiRunning(context);
     const plan = await context.store.read("plans", parts[2]);
     if (!plan) {
       throw new HttpError("计划不存在", 404, "PLAN_NOT_FOUND");
@@ -18,7 +18,7 @@ export async function handleTaskRoutes(request: Request, context: RouteContext):
     return jsonOk(await runner.precheck(plan));
   }
   if (parts[0] === "api" && parts[1] === "plans" && parts[2] && parts[3] === "execute" && request.method === "POST") {
-    await context.localApiProcessManager.ensureRunning();
+    await ensureLocalApiRunning(context);
     const plan = await context.store.read("plans", parts[2]);
     if (!plan) {
       throw new HttpError("计划不存在", 404, "PLAN_NOT_FOUND");

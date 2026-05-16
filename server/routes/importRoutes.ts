@@ -4,7 +4,7 @@ import type { ImportBatch, PriorityDemandRecord } from "../domain/models";
 import { createAuditLog } from "../domain/models";
 import { generatePlanFromImport } from "../domain/planWorkflow";
 import { HttpError, jsonOk, pathParts, readJson } from "../http";
-import type { RouteContext } from "./context";
+import { ensureLocalApiRunning, type RouteContext } from "./context";
 
 interface UpdateImportBody {
   aggregatedDemands?: PriorityDemandRecord[];
@@ -63,7 +63,7 @@ export async function handleImportRoutes(request: Request, context: RouteContext
     }
 
     if (request.method === "POST" && parts[3] === "generate-plan") {
-      await context.localApiProcessManager.ensureRunning();
+      await ensureLocalApiRunning(context);
       const body = await maybeJson<GeneratePlanBody>(request);
       const plan = await generatePlanFromImport(context.store, context.localApiClient, id, body);
       return jsonOk(plan, { status: 201 });
