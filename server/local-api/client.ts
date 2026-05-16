@@ -127,6 +127,17 @@ export class DmLocalApiClient {
     });
   }
 
+  async abandonCredit(activityId: string, creditId: string, userScoreIds: string[]): Promise<boolean> {
+    if (userScoreIds.length === 0) {
+      throw new LocalApiError("userScoreIds 不能为空", { code: "EMPTY_USER_SCORE_IDS" });
+    }
+    return this.post("/credit/abandon", {
+      activityId,
+      scoreId: creditId,
+      userScoreIds: userScoreIds.join(","),
+    });
+  }
+
   async sendCreditByName(activityId: string, scoreId: string, usernameList: string[]): Promise<boolean> {
     return this.post("/credit/send-by-name", {
       activityId,

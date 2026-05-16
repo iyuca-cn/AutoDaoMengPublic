@@ -1,6 +1,6 @@
 export type SupportedCreditType = "美育实践学分" | "思想成长学分" | "劳动教育学分" | "体育活动学分";
 export type SessionSource = "account" | "exportUrl";
-export type OperationKind = "resign" | "issueCredit" | "resignThenIssueCredit";
+export type OperationKind = "resign" | "issueCredit" | "resignThenIssueCredit" | "abandonCredit";
 export type OperationPlanStatus = "draft" | "ready" | "running" | "completed" | "failed" | "cancelled";
 export type AssignmentStatus = "planned" | "disabled" | "issued" | "skipped" | "failed";
 
@@ -34,9 +34,11 @@ export interface ActivityPersonRow {
   studentName: string;
   signUpId?: string;
   userId?: string;
+  userScoreId?: string;
   signStatus?: SignStatus;
   admitStatus?: AdmitStatus;
   source?: string;
+  raw?: Record<string, unknown>;
 }
 
 export interface ActivityCreditLists {
@@ -172,6 +174,7 @@ export interface ExecutionTask {
   result?: {
     resignSuccessCount: number;
     issueSuccessCount: number;
+    abandonSuccessCount: number;
     skippedAlreadyIssuedCount: number;
     failedCount: number;
   };
@@ -187,6 +190,7 @@ export interface ApiStreamEvent<T = unknown> {
 export interface OperationCreditItem extends ActivityCreditItem {
   activityId: string;
   activityName: string;
+  userScoreId?: string;
 }
 
 export interface OperationAction {
@@ -211,6 +215,7 @@ export interface OperationPlanSummary {
   targetCreditItemCount: number;
   expectedResignCount: number;
   expectedIssueCount: number;
+  expectedAbandonCount: number;
 }
 
 export interface OperationPrecheckIssue {

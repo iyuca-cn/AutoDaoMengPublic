@@ -15,6 +15,7 @@ export interface OperationExecutorClient {
   getSignList(activityId: string, type: number): Promise<unknown[]>;
   getCreditList(kind: keyof typeof CREDIT_LIST_URLS, activityId: string, creditId: string): Promise<unknown[]>;
   sendCredit(activityId: string, creditId: string, userIds: string[]): Promise<boolean>;
+  abandonCredit(activityId: string, creditId: string, userScoreIds: string[]): Promise<boolean>;
   resign(activityId: string, signUpIds: string[], isAll?: boolean): Promise<boolean>;
 }
 
@@ -65,6 +66,24 @@ export async function precheckOperationPlan(client: OperationExecutorClient, pla
       if (action.kind === "resign") {
         continue;
       }
+      if (action.kind === "abandonCredit") {
+        for (const item of action.creditItems) {
+          const itemActivityId = item.activityId || action.activityId;
+          const credited = await client.getCreditList("credited", itemActivityId, item.creditId);
+          const creditedRow = findCreditedRow(credited, action);
+          if (!creditedRow) {
+            issues.push(actionIssue(action, "error", "NOT_CREDITED", `${action.studentName} 未发放 ${item.creditType}，不能撤销`, item.scoreId));
+            continue;
+          }
+          const userScoreId = userScoreIdFromCreditedRow(creditedRow, action.signUpId);
+          if (!userScoreId) {
+            issues.push(actionIssue(action, "error", "MISSING_USER_SCORE_ID", `${action.studentName} 的 ${item.creditType} 缺少 userScoreId，不能撤销`, item.scoreId));
+            continue;
+          }
+          item.userScoreId = userScoreId;
+        }
+        continue;
+      }
       if (isInvalidUserId(action.userId)) {
         issues.push(actionIssue(action, "error", "MISSING_USER_ID", `${action.studentName} 缺少有效 userId，不能按用户 uid 发放学分`));
       }
@@ -73,8 +92,8 @@ export async function precheckOperationPlan(client: OperationExecutorClient, pla
         if (item.remainingCapacity <= 0) {
           issues.push(actionIssue(action, "error", "NO_CREDIT_CAPACITY", `${item.creditType} 剩余容量不足`, item.scoreId));
         }
-        const credited = await creditedSignUpIds(client, creditedCache, itemActivityId, item.creditId);
-        if (credited.has(action.signUpId)) {
+        const credited = await creditedIdentityKeys(client, creditedCache, itemActivityId, item.creditId);
+        if (actionIdentityKeys(action).some((key) => credited.has(key))) {
           issues.push(actionIssue(action, "warning", "ALREADY_CREDITED", `${action.studentName} 已发放 ${item.creditType}，执行时会跳过`, item.scoreId));
         }
       }
@@ -97,11 +116,33 @@ export async function executeOperationPlan(client: OperationExecutorClient, plan
   }
   let resignSuccessCount = 0;
   let issueSuccessCount = 0;
+  let abandonSuccessCount = 0;
   let skippedAlreadyIssuedCount = 0;
   let failedCount = 0;
 
   for (const action of report.normalizedActions.filter((item) => item.enabled)) {
     const activityId = action.activityId || plan.activityId;
+    if (action.kind === "abandonCredit") {
+      for (const item of action.creditItems) {
+      const itemActivityId = item.activityId || activityId;
+      const credited = await client.getCreditList("credited", itemActivityId, item.creditId);
+      const creditedRow = findCreditedRow(credited, action);
+      const userScoreId = item.userScoreId || userScoreIdFromCreditedRow(creditedRow, action.signUpId);
+        if (!userScoreId) {
+          failedCount += 1;
+          onEvent?.(`${action.studentName} 的 ${item.creditType} 缺少 userScoreId，跳过撤销`);
+          continue;
+        }
+        const ok = await client.abandonCredit(itemActivityId, item.creditId, [userScoreId]);
+        if (ok) {
+          abandonSuccessCount += 1;
+          onEvent?.(`已为 ${action.studentName} 撤销 ${item.creditType}`);
+        } else {
+          failedCount += 1;
+        }
+      }
+      continue;
+    }
     let canIssue = true;
     if (action.kind === "resign" || action.kind === "resignThenIssueCredit") {
       const unsigned = await client.getSignList(activityId, SIGN_TYPES.unsigned);
@@ -129,8 +170,8 @@ export async function executeOperationPlan(client: OperationExecutorClient, plan
     for (const item of action.creditItems) {
       const itemActivityId = item.activityId || activityId;
       const credited = await client.getCreditList("credited", itemActivityId, item.creditId);
-      const creditedSignUpIds = new Set(credited.map((row) => getFirstString(row, ["signUpId", "signupId", "id"])));
-      if (creditedSignUpIds.has(action.signUpId)) {
+      const creditedKeys = new Set(credited.flatMap(rowIdentityKeys));
+      if (actionIdentityKeys(action).some((key) => creditedKeys.has(key))) {
         skippedAlreadyIssuedCount += 1;
         onEvent?.(`${action.studentName} 已发放 ${item.creditType}，跳过`);
         continue;
@@ -148,6 +189,7 @@ export async function executeOperationPlan(client: OperationExecutorClient, plan
   return {
     resignSuccessCount,
     issueSuccessCount,
+    abandonSuccessCount,
     skippedAlreadyIssuedCount,
     failedCount,
   };
@@ -172,8 +214,9 @@ export function applyPrecheck(plan: OperationPlan, report: OperationPrecheckRepo
 
 function actionCount(action: OperationAction): number {
   const resignCount = action.kind === "resign" || action.kind === "resignThenIssueCredit" ? 1 : 0;
-  const issueCount = action.kind === "resign" ? 0 : action.creditItems.length;
-  return resignCount + issueCount;
+  const issueCount = action.kind === "issueCredit" || action.kind === "resignThenIssueCredit" ? action.creditItems.length : 0;
+  const abandonCount = action.kind === "abandonCredit" ? action.creditItems.length : 0;
+  return resignCount + issueCount + abandonCount;
 }
 
 function normalizeActionActivity(plan: OperationPlan, action: OperationAction): OperationAction {
@@ -201,13 +244,61 @@ function groupByActivity(actions: OperationAction[]): Map<string, OperationActio
   return groups;
 }
 
-async function creditedSignUpIds(client: OperationExecutorClient, cache: Map<string, Set<string>>, activityId: string, creditId: string): Promise<Set<string>> {
+async function creditedIdentityKeys(client: OperationExecutorClient, cache: Map<string, Set<string>>, activityId: string, creditId: string): Promise<Set<string>> {
   const key = `${activityId}:${creditId}`;
   if (!cache.has(key)) {
     const rows = await client.getCreditList("credited", activityId, creditId);
-    cache.set(key, new Set(rows.map((row) => getFirstString(row, ["signUpId", "signupId", "id"])).filter(Boolean)));
+    cache.set(key, new Set(rows.flatMap(rowIdentityKeys)));
   }
   return cache.get(key) ?? new Set();
+}
+
+function findCreditedRow(rows: unknown[], action: OperationAction): unknown | null {
+  const keys = new Set(actionIdentityKeys(action));
+  return rows.find((row) => rowIdentityKeys(row).some((key) => keys.has(key))) ?? null;
+}
+
+function userScoreIdFromCreditedRow(row: unknown | null | undefined, signUpId: string): string {
+  const userScoreId = getFirstString(row, [
+    "userScoreId",
+    "userScoreID",
+    "userScoreIds",
+    "user_score_id",
+    "user_score_ids",
+    "scoreUserId",
+    "userCreditId",
+  ]);
+  if (userScoreId) {
+    return userScoreId;
+  }
+  const rawId = getFirstString(row, ["id"]);
+  return rawId && rawId !== signUpId ? rawId : "";
+}
+
+function actionIdentityKeys(action: OperationAction): string[] {
+  return uniqueStrings([
+    action.signUpId ? `signup:${action.signUpId}` : "",
+    action.userId ? `user:${action.userId}` : "",
+    action.studentId ? `student:${action.studentId}` : "",
+    action.studentId || action.studentName ? `student-name:${action.studentId ?? ""}:${action.studentName}` : "",
+  ]);
+}
+
+function rowIdentityKeys(row: unknown): string[] {
+  const signUpId = getFirstString(row, ["signUpId", "signupId", "signup_id", "joinId"]);
+  const userId = getFirstString(row, ["userId", "uid", "user_id"]);
+  const studentId = getFirstString(row, ["studentId", "studentNo", "stuNo", "schoolNo", "code", "no"]);
+  const studentName = getFirstString(row, ["studentName", "stuName", "realName", "realname", "name", "username", "nickname", "userName"]);
+  return uniqueStrings([
+    signUpId ? `signup:${signUpId}` : "",
+    userId ? `user:${userId}` : "",
+    studentId ? `student:${studentId}` : "",
+    studentId || studentName ? `student-name:${studentId}:${studentName}` : "",
+  ]);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
 }
 
 function normalizePerson(value: unknown): ActivityPersonRow {

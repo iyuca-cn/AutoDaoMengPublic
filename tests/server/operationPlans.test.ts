@@ -47,6 +47,21 @@ describe("operation plans", () => {
     expect(plan.summary.expectedIssueCount).toBe(1);
   });
 
+  it("creates abandon plans from selected credited items", () => {
+    const plan = createOperationPlan({
+      kind: "abandonCredit",
+      activityId: "activity-1",
+      activityName: "活动一",
+      members: [member],
+      creditItems: [{ ...creditItem, userScoreId: "user-score-1" } as ActivityCreditItem],
+    });
+
+    expect(plan.name).toBe("活动一 撤销发放计划");
+    expect(plan.actions[0].creditItems[0].userScoreId).toBe("user-score-1");
+    expect(plan.summary.expectedAbandonCount).toBe(1);
+    expect(plan.summary.expectedIssueCount).toBe(0);
+  });
+
   it("creates one operation plan across multiple activities", () => {
     const plan = createOperationPlan({
       kind: "issueCredit",

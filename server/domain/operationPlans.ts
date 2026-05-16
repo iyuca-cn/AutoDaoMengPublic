@@ -34,7 +34,7 @@ export interface PatchOperationPlanInput {
 }
 
 export function createOperationPlan(input: CreateOperationPlanInput): OperationPlan {
-  if (!["resign", "issueCredit", "resignThenIssueCredit"].includes(input.kind)) {
+  if (!["resign", "issueCredit", "resignThenIssueCredit", "abandonCredit"].includes(input.kind)) {
     throw new Error("操作类型不支持");
   }
   const selections = normalizeSelections(input);
@@ -102,7 +102,8 @@ export function buildOperationPlanSummary(actions: OperationAction[]): Operation
     targetMemberCount: new Set(enabled.map((action) => `${action.activityId}:${action.signUpId}`)).size,
     targetCreditItemCount: targetCreditKeys.size,
     expectedResignCount: enabled.filter((action) => action.kind === "resign" || action.kind === "resignThenIssueCredit").length,
-    expectedIssueCount: enabled.reduce((sum, action) => sum + (action.kind === "resign" ? 0 : action.creditItems.length), 0),
+    expectedIssueCount: enabled.reduce((sum, action) => sum + (action.kind === "issueCredit" || action.kind === "resignThenIssueCredit" ? action.creditItems.length : 0), 0),
+    expectedAbandonCount: enabled.reduce((sum, action) => sum + (action.kind === "abandonCredit" ? action.creditItems.length : 0), 0),
   };
 }
 
@@ -165,14 +166,18 @@ function normalizeCreditItems(kind: OperationKind, items: ActivityCreditItem[], 
     return [];
   }
   if (items.length === 0) {
-    throw new Error("发放类操作必须选择学分项");
+    throw new Error(kind === "abandonCredit" ? "撤销类操作必须选择已发学分项" : "发放类操作必须选择学分项");
   }
   for (const item of items) {
     if (!item.creditId) {
       throw new Error(`${item.creditType} 缺少 creditId，不能生成发放计划`);
     }
   }
-  return uniqueCreditItems(items).map((item) => creditItemToOperationItem(item, activityId, activityName));
+  return uniqueCreditItems(items).map((item) => {
+    const operationItem = creditItemToOperationItem(item, activityId, activityName);
+    const userScoreId = userScoreIdFromCreditItem(item);
+    return userScoreId ? { ...operationItem, userScoreId } : operationItem;
+  });
 }
 
 function uniqueMembers(members: ActivityPersonRow[]): ActivityPersonRow[] {
@@ -239,6 +244,7 @@ function defaultPlanName(kind: OperationKind, activityNames: string[]): string {
     resign: "补签计划",
     issueCredit: "发放计划",
     resignThenIssueCredit: "补签后发放计划",
+    abandonCredit: "撤销发放计划",
   } satisfies Record<OperationKind, string>;
   const prefix = activityNames.length === 1 ? activityNames[0] : `${activityNames.length} 个活动`;
   return `${prefix} ${label[kind]}`;
@@ -246,4 +252,18 @@ function defaultPlanName(kind: OperationKind, activityNames: string[]): string {
 
 function uniqueValues(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function userScoreIdFromCreditItem(item: ActivityCreditItem): string {
+  const record = item as ActivityCreditItem & { userScoreId?: unknown; raw?: Record<string, unknown> };
+  return normalizeUserScoreId(record.userScoreId) || normalizeUserScoreId(record.raw?.userScoreId)
+    || normalizeUserScoreId(record.raw?.userScoreID)
+    || normalizeUserScoreId(record.raw?.user_score_id)
+    || normalizeUserScoreId(record.raw?.scoreUserId)
+    || normalizeUserScoreId(record.raw?.userCreditId)
+    || normalizeUserScoreId(record.raw?.id);
+}
+
+function normalizeUserScoreId(value: unknown): string {
+  return String(value ?? "").trim();
 }

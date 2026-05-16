@@ -14,6 +14,7 @@ describe("DmLocalApiClient", () => {
     await client.getSignList("1001", 1);
     await client.resign("1001", ["9001"], false);
     await client.sendCredit("1001", "301", ["u-001"]);
+    await client.abandonCredit("1001", "301", ["score-001"]);
     await client.sendCreditBySignUpId("1001", "301", ["9001"]);
 
     expect(calls[0].url).toBe("http://127.0.0.1:8765/manage/activities");
@@ -21,7 +22,8 @@ describe("DmLocalApiClient", () => {
     expect(calls[2].url).toBe("http://127.0.0.1:8765/sign/list?activityId=1001&type=1");
     expect(JSON.parse(String(calls[3].init?.body))).toMatchObject({ activityId: "1001", signUpId_list: ["9001"], is_all: false });
     expect(JSON.parse(String(calls[4].init?.body))).toMatchObject({ userList: "u-001" });
-    expect(JSON.parse(String(calls[5].init?.body))).toMatchObject({ signUpIdList: ["9001"] });
+    expect(JSON.parse(String(calls[5].init?.body))).toMatchObject({ userScoreIds: "score-001" });
+    expect(JSON.parse(String(calls[6].init?.body))).toMatchObject({ signUpIdList: ["9001"] });
   });
 
   it("throws clear proxy errors", async () => {

@@ -3,7 +3,9 @@
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div>
         <h3 class="font-semibold">生成操作计划</h3>
-        <p class="mt-1 text-sm text-slate-600">计划人员 {{ effectiveMembers.length }} 人，学分项 {{ effectiveCreditItems.length }} 个。</p>
+        <p class="mt-1 text-sm text-slate-600">
+          计划人员 {{ effectiveMembers.length }} 人，可发 {{ effectiveIssueCreditItems.length }} 项，可撤销 {{ effectiveAbandonCreditItems.length }} 项。
+        </p>
       </div>
       <div class="flex flex-wrap gap-2">
         <button class="text-button" type="button" :disabled="!canResign || loading" @click="create('resign')">
@@ -18,6 +20,10 @@
           <ListChecks class="h-4 w-4" />
           生成补签后发放计划
         </button>
+        <button class="danger-button" type="button" :disabled="!canAbandon || loading" @click="create('abandonCredit')">
+          <Undo2 class="h-4 w-4" />
+          生成撤销计划
+        </button>
       </div>
     </div>
     <p v-if="message" class="mt-3 rounded border border-moss/30 bg-mint px-3 py-2 text-sm text-moss">{{ message }}</p>
@@ -26,7 +32,7 @@
 </template>
 
 <script setup lang="ts">
-import { BadgeCheck, ListChecks, UserCheck } from "lucide-vue-next";
+import { BadgeCheck, ListChecks, Undo2, UserCheck } from "lucide-vue-next";
 import { computed, ref } from "vue";
 import { apiPost } from "../api";
 import type { ActivityCreditItem, ActivityDetail, ActivityPersonRow, OperationKind, OperationPlan } from "../types";
@@ -34,7 +40,8 @@ import type { ActivityCreditItem, ActivityDetail, ActivityPersonRow, OperationKi
 const props = defineProps<{
   detail: ActivityDetail;
   selectedMembers: ActivityPersonRow[];
-  selectedCreditItems: ActivityCreditItem[];
+  issueCreditItems: ActivityCreditItem[];
+  abandonCreditItems: ActivityCreditItem[];
 }>();
 
 const emit = defineEmits<{
@@ -45,9 +52,11 @@ const loading = ref(false);
 const error = ref("");
 const message = ref("");
 const effectiveMembers = computed(() => props.selectedMembers.length > 0 ? props.selectedMembers : selectableMembers(props.detail));
-const effectiveCreditItems = computed(() => props.selectedCreditItems.length > 0 ? props.selectedCreditItems : props.detail.creditItems);
+const effectiveIssueCreditItems = computed(() => props.issueCreditItems);
+const effectiveAbandonCreditItems = computed(() => props.abandonCreditItems);
 const canResign = computed(() => effectiveMembers.value.length > 0);
-const canIssue = computed(() => effectiveMembers.value.length > 0 && effectiveCreditItems.value.length > 0);
+const canIssue = computed(() => effectiveMembers.value.length > 0 && effectiveIssueCreditItems.value.length > 0);
+const canAbandon = computed(() => props.selectedMembers.length === 1 && effectiveAbandonCreditItems.value.length > 0);
 
 async function create(kind: OperationKind) {
   loading.value = true;
@@ -59,7 +68,11 @@ async function create(kind: OperationKind) {
       activityId: props.detail.activityId,
       activityName: props.detail.activityName,
       members: effectiveMembers.value,
-      creditItems: kind === "resign" ? [] : effectiveCreditItems.value,
+      creditItems: kind === "resign"
+        ? []
+        : kind === "abandonCredit"
+          ? effectiveAbandonCreditItems.value
+          : effectiveIssueCreditItems.value,
     });
     message.value = `已生成：${plan.name}`;
     emit("created", plan);

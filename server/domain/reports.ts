@@ -50,6 +50,7 @@ export function writeExecutionWorkbook(task: ExecutionTask): ArrayBuffer {
       "状态": task.status,
       "补签成功": task.result?.resignSuccessCount ?? 0,
       "发放成功": task.result?.issueSuccessCount ?? 0,
+      "撤销成功": task.result?.abandonSuccessCount ?? 0,
       "已发跳过": task.result?.skippedAlreadyIssuedCount ?? 0,
       "失败": task.result?.failedCount ?? 0,
     },

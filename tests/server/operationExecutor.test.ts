@@ -15,6 +15,12 @@ describe("operation executor", () => {
     expect(report.issues.some((issue) => issue.code === "ALREADY_CREDITED")).toBe(true);
   });
 
+  it("warns for already credited members matched by user id", async () => {
+    const report = await precheckOperationPlan(fakeClient({ credited: [{ id: "user-score-1", userId: "user-1" }] }), plan("issueCredit"));
+    expect(report.executable).toBe(true);
+    expect(report.issues.some((issue) => issue.code === "ALREADY_CREDITED")).toBe(true);
+  });
+
   it("executes resign before issue", async () => {
     const calls: string[] = [];
     const client = fakeClient({ calls });
@@ -22,6 +28,34 @@ describe("operation executor", () => {
     expect(calls.indexOf("resign:activity-1:signup-1")).toBeLessThan(calls.indexOf("send:activity-1:credit-1:user-1"));
     expect(result.resignSuccessCount).toBe(1);
     expect(result.issueSuccessCount).toBe(1);
+  });
+
+  it("executes abandon credit with the credited userScoreId", async () => {
+    const calls: string[] = [];
+    const client = fakeClient({ calls, credited: [{ signUpId: "signup-1", userScoreId: "user-score-1" }] });
+
+    const result = await executeOperationPlan(client, plan("abandonCredit"));
+
+    expect(calls).toContain("abandon:activity-1:credit-1:user-score-1");
+    expect(result.abandonSuccessCount).toBe(1);
+    expect(result.failedCount).toBe(0);
+  });
+
+  it("executes abandon credit when credited rows only expose user id and id", async () => {
+    const calls: string[] = [];
+    const client = fakeClient({ calls, credited: [{ id: "user-score-1", userId: "user-1" }] });
+
+    const result = await executeOperationPlan(client, plan("abandonCredit"));
+
+    expect(calls).toContain("abandon:activity-1:credit-1:user-score-1");
+    expect(result.abandonSuccessCount).toBe(1);
+  });
+
+  it("blocks abandon credit when the member has not been credited", async () => {
+    const report = await precheckOperationPlan(fakeClient({ credited: [] }), plan("abandonCredit"));
+
+    expect(report.executable).toBe(false);
+    expect(report.issues.some((issue) => issue.code === "NOT_CREDITED")).toBe(true);
   });
 
   it("uses creditId instead of scoreId for operation credit reads and writes", async () => {
@@ -129,8 +163,9 @@ function plan(kind: OperationPlan["kind"], overrides: { userId?: string } = {}):
       enabledCount: 1,
       targetMemberCount: 1,
       targetCreditItemCount: kind === "resign" ? 0 : 1,
-      expectedResignCount: kind === "issueCredit" ? 0 : 1,
-      expectedIssueCount: kind === "resign" ? 0 : 1,
+      expectedResignCount: kind === "resign" || kind === "resignThenIssueCredit" ? 1 : 0,
+      expectedIssueCount: kind === "issueCredit" || kind === "resignThenIssueCredit" ? 1 : 0,
+      expectedAbandonCount: kind === "abandonCredit" ? 1 : 0,
     },
     auditLogs: [],
   };
@@ -157,6 +192,10 @@ function fakeClient(options: { signCard?: string | null; credited?: unknown[]; c
     },
     sendCredit: async (activityId, creditId, userIds) => {
       options.calls?.push(`send:${activityId}:${creditId}:${userIds[0]}`);
+      return true;
+    },
+    abandonCredit: async (activityId, creditId, userScoreIds) => {
+      options.calls?.push(`abandon:${activityId}:${creditId}:${userScoreIds[0]}`);
       return true;
     },
   };

@@ -108,6 +108,7 @@ export async function executePlan(client: ExecutorClient, plan: Plan, onEvent?: 
   return {
     resignSuccessCount,
     issueSuccessCount,
+    abandonSuccessCount: 0,
     skippedAlreadyIssuedCount,
     failedCount,
   };

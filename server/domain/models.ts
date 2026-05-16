@@ -31,7 +31,7 @@ export type OperationPlanStatus = PlanStatus;
 export type AssignmentStatus = "planned" | "disabled" | "issued" | "skipped" | "failed";
 export type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 export type SessionSource = "account" | "exportUrl";
-export type OperationKind = "resign" | "issueCredit" | "resignThenIssueCredit";
+export type OperationKind = "resign" | "issueCredit" | "resignThenIssueCredit" | "abandonCredit";
 export type TaskTargetType = "creditPlan" | "operationPlan";
 
 export interface StoredSession {
@@ -118,6 +118,7 @@ export interface ActivityPersonRow {
   studentName: string;
   signUpId?: string;
   userId?: string;
+  userScoreId?: string;
   signStatus?: SignStatus;
   admitStatus?: AdmitStatus;
   source?: string;
@@ -250,6 +251,7 @@ export interface ExecutionTask {
 export interface ExecutionSummary {
   resignSuccessCount: number;
   issueSuccessCount: number;
+  abandonSuccessCount: number;
   skippedAlreadyIssuedCount: number;
   failedCount: number;
 }
@@ -265,6 +267,7 @@ export interface AuditLogEntry {
 export interface OperationCreditItem extends ActivityCreditItem {
   activityId: string;
   activityName: string;
+  userScoreId?: string;
 }
 
 export interface OperationAction {
@@ -289,6 +292,7 @@ export interface OperationPlanSummary {
   targetCreditItemCount: number;
   expectedResignCount: number;
   expectedIssueCount: number;
+  expectedAbandonCount: number;
 }
 
 export interface OperationPrecheckIssue {

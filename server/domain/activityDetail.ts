@@ -56,14 +56,18 @@ export async function buildActivityDetail(client: ActivityDetailClient, activity
     const candidates = (await client.getCreditList("candidates", normalizedActivityId, item.creditId)).map((row) => normalizePerson(row, { source: "credit.candidates" }));
     const other = (await client.getCreditList("other", normalizedActivityId, item.creditId)).map((row) => normalizePerson(row, { source: "credit.other" }));
     const credited = (await client.getCreditList("credited", normalizedActivityId, item.creditId)).map((row) => normalizePerson(row, { source: "credit.credited" }));
-    const creditedKeys = new Set(credited.map(personIdentityKey).filter(Boolean));
-    const notSent = uniquePeople([...candidates, ...other].filter((person) => !creditedKeys.has(personIdentityKey(person))));
-    creditListsByScoreId[item.scoreId] = {
+    const creditedKeys = new Set(credited.flatMap(personIdentityKeys));
+    const notSent = uniquePeople([...candidates, ...other].filter((person) => !personIdentityKeys(person).some((key) => creditedKeys.has(key))));
+    const lists = {
       candidates: uniquePeople(candidates),
       other: uniquePeople(other),
       credited: uniquePeople(credited),
       notSent,
     };
+    creditListsByScoreId[item.creditId] = lists;
+    if (!creditListsByScoreId[item.scoreId]) {
+      creditListsByScoreId[item.scoreId] = lists;
+    }
   }
   return {
     activityId: normalizedActivityId,
@@ -99,11 +103,13 @@ export function activityCreditItemFromRow(row: unknown): ActivityCreditItem | nu
 export function normalizePerson(value: unknown, options: Partial<ActivityPersonRow> = {}): ActivityPersonRow {
   const record = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
   const studentName = getFirstString(record, ["studentName", "stuName", "realName", "realname", "name", "username", "nickname", "userName"]) || "未知姓名";
+  const isCreditedCreditRow = options.source === "credit.credited";
   const person: ActivityPersonRow = {
     studentId: getFirstString(record, ["studentId", "studentNo", "stuNo", "schoolNo", "code", "no"]) || undefined,
     studentName,
-    signUpId: getFirstString(record, ["signUpId", "signupId", "signup_id", "joinId", "id"]) || undefined,
+    signUpId: getFirstString(record, isCreditedCreditRow ? ["signUpId", "signupId", "signup_id", "joinId"] : ["signUpId", "signupId", "signup_id", "joinId", "id"]) || undefined,
     userId: getFirstString(record, ["userId", "uid", "user_id"]) || undefined,
+    userScoreId: isCreditedCreditRow ? getFirstString(record, ["userScoreId", "userScoreID", "userScoreIds", "user_score_id", "user_score_ids", "scoreUserId", "userCreditId", "id"]) || undefined : undefined,
     signStatus: options.signStatus,
     admitStatus: options.admitStatus,
     source: options.source,
@@ -249,9 +255,22 @@ function valueOrFallback(value: number, fallback: number): number {
   return value === -1 ? fallback : value;
 }
 
+function personIdentityKeys(person: ActivityPersonRow): string[] {
+  const keys = [
+    person.signUpId ? `signup:${person.signUpId}` : "",
+    person.userId ? `user:${person.userId}` : "",
+    person.studentId ? `student:${person.studentId}` : "",
+    person.studentId || person.studentName ? `student-name:${person.studentId ?? ""}:${person.studentName}` : "",
+  ];
+  return [...new Set(keys.filter(Boolean))];
+}
+
 function personIdentityKey(person: ActivityPersonRow): string {
   if (person.signUpId) {
     return `signup:${person.signUpId}`;
+  }
+  if (person.userId) {
+    return `user:${person.userId}`;
   }
   if (person.studentId || person.studentName) {
     return `student:${person.studentId ?? ""}:${person.studentName}`;
@@ -277,6 +296,7 @@ function mergePerson(existing: ActivityPersonRow, incoming: ActivityPersonRow): 
     ...existing,
     ...incoming,
     userId: preferredUserId(existing.userId, incoming.userId),
+    userScoreId: incoming.userScoreId || existing.userScoreId,
   };
 }
 

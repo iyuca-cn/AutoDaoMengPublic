@@ -1,6 +1,6 @@
 <template>
   <div class="grid gap-4">
-    <div class="grid gap-3 md:grid-cols-5">
+    <div class="grid gap-3 md:grid-cols-6">
       <div v-for="item in summary" :key="item.label" class="rounded border border-line bg-paper p-3">
         <div class="text-xs text-slate-500">{{ item.label }}</div>
         <div class="mt-1 text-xl font-semibold">{{ item.value }}</div>
@@ -79,6 +79,7 @@ const summary = computed(() => [
   { label: "人员", value: props.plan.summary.targetMemberCount },
   { label: "预计补签", value: props.plan.summary.expectedResignCount },
   { label: "预计发放", value: props.plan.summary.expectedIssueCount },
+  { label: "预计撤销", value: props.plan.summary.expectedAbandonCount ?? 0 },
 ]);
 
 function update(index: number, patch: Partial<OperationAction>) {
@@ -91,6 +92,7 @@ function kindLabel(kind: OperationKind): string {
     resign: "补签",
     issueCredit: "发放",
     resignThenIssueCredit: "补签后发放",
+    abandonCredit: "撤销发放",
   };
   return labels[kind];
 }

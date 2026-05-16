@@ -30,7 +30,8 @@
     <OperationPlanCreator
       :detail="detail"
       :selected-members="selectedMembers"
-      :selected-credit-items="selectedCreditItems"
+      :issue-credit-items="effectiveIssueCreditItemsForPlan"
+      :abandon-credit-items="effectiveAbandonCreditItemsForPlan"
       @created="$emit('plan-created', $event)"
     />
 
@@ -86,11 +87,31 @@
 
     <ActivityMemberTable :rows="filteredMembers" :selected-ids="selectedSignUpIds" @toggle="toggleMember" />
 
+    <template v-if="singleSelectedMember">
+      <CreditIssueTable
+        title="可发学分项"
+        empty-text="当前人员暂无可发学分项"
+        :credit-items="issueCreditItems"
+        :credit-lists-by-score-id="detail.creditListsByScoreId"
+        :selected-credit-item-keys="selectedIssueCreditItemKeys"
+        @toggle-credit="toggleIssueCredit"
+      />
+      <CreditIssueTable
+        title="可撤销已发项"
+        empty-text="当前人员暂无可撤销已发项"
+        :credit-items="abandonCreditItems"
+        :credit-lists-by-score-id="detail.creditListsByScoreId"
+        :selected-credit-item-keys="selectedAbandonCreditItemKeys"
+        @toggle-credit="toggleAbandonCredit"
+      />
+    </template>
     <CreditIssueTable
-      :credit-items="detail.creditItems"
+      v-else
+      title="学分项"
+      :credit-items="issueCreditItems"
       :credit-lists-by-score-id="detail.creditListsByScoreId"
-      :selected-credit-item-keys="selectedCreditItemKeys"
-      @toggle-credit="toggleCredit"
+      :selected-credit-item-keys="selectedIssueCreditItemKeys"
+      @toggle-credit="toggleIssueCredit"
     />
   </section>
 </template>
@@ -114,7 +135,8 @@ defineEmits<{
 }>();
 
 const selectedSignUpIds = ref<string[]>([]);
-const selectedCreditItemKeys = ref<string[]>([]);
+const selectedIssueCreditItemKeys = ref<string[]>([]);
+const selectedAbandonCreditItemKeys = ref<string[]>([]);
 const filters = reactive({
   name: "",
   studentId: "",
@@ -158,10 +180,35 @@ const selectedMembers = computed(() => {
   return allMembers.value.filter((person) => person.signUpId && ids.has(person.signUpId));
 });
 
-const selectedCreditItems = computed<ActivityCreditItem[]>(() => {
-  const keys = new Set(selectedCreditItemKeys.value);
-  return props.detail.creditItems.filter((item) => keys.has(creditItemKey(item)));
+const singleSelectedMember = computed(() => selectedMembers.value.length === 1 ? selectedMembers.value[0] : null);
+
+const issueCreditItems = computed<ActivityCreditItem[]>(() => {
+  const member = singleSelectedMember.value;
+  if (!member) {
+    return props.detail.creditItems;
+  }
+  return props.detail.creditItems.filter((item) => personInRows(member, creditListsForItem(item).notSent));
 });
+
+const abandonCreditItems = computed<ActivityCreditItem[]>(() => {
+  const member = singleSelectedMember.value;
+  if (!member) {
+    return [];
+  }
+  return props.detail.creditItems.flatMap((item) => {
+    const creditedPerson = creditListsForItem(item).credited.find((row) => samePerson(member, row));
+    const userScoreId = userScoreIdFromCreditedPerson(creditedPerson, member);
+    return creditedPerson ? [{ ...item, userScoreId }] : [];
+  });
+});
+
+const effectiveIssueCreditItemsForPlan = computed<ActivityCreditItem[]>(() => selectedOrAll(issueCreditItems.value, selectedIssueCreditItemKeys.value));
+const effectiveAbandonCreditItemsForPlan = computed<ActivityCreditItem[]>(() => selectedOrAll(abandonCreditItems.value, selectedAbandonCreditItemKeys.value));
+
+function selectedOrAll(items: ActivityCreditItem[], keys: string[]): ActivityCreditItem[] {
+  const visibleSelected = items.filter((item) => keys.includes(creditItemKey(item)));
+  return visibleSelected.length > 0 ? visibleSelected : items;
+}
 
 const stats = computed(() => [
   { label: "未签", value: props.detail.signLists.unsigned.length },
@@ -176,10 +223,16 @@ function toggleMember(signUpId: string) {
     : [...selectedSignUpIds.value, signUpId];
 }
 
-function toggleCredit(key: string) {
-  selectedCreditItemKeys.value = selectedCreditItemKeys.value.includes(key)
-    ? selectedCreditItemKeys.value.filter((item) => item !== key)
-    : [...selectedCreditItemKeys.value, key];
+function toggleIssueCredit(key: string) {
+  selectedIssueCreditItemKeys.value = selectedIssueCreditItemKeys.value.includes(key)
+    ? selectedIssueCreditItemKeys.value.filter((item) => item !== key)
+    : [...selectedIssueCreditItemKeys.value, key];
+}
+
+function toggleAbandonCredit(key: string) {
+  selectedAbandonCreditItemKeys.value = selectedAbandonCreditItemKeys.value.includes(key)
+    ? selectedAbandonCreditItemKeys.value.filter((item) => item !== key)
+    : [...selectedAbandonCreditItemKeys.value, key];
 }
 
 function selectAll() {
@@ -191,6 +244,70 @@ function selectAll() {
 
 function creditItemKey(item: ActivityCreditItem): string {
   return [item.scoreId, item.creditId, item.creditType, item.unitcountCent].join(":");
+}
+
+function creditListsForItem(item: ActivityCreditItem) {
+  return props.detail.creditListsByScoreId[item.creditId] ?? props.detail.creditListsByScoreId[item.scoreId] ?? {
+    candidates: [],
+    other: [],
+    credited: [],
+    notSent: [],
+  };
+}
+
+function personInRows(member: ActivityPersonRow, rows: ActivityPersonRow[]): boolean {
+  return rows.some((row) => samePerson(member, row));
+}
+
+function samePerson(left: ActivityPersonRow, right?: ActivityPersonRow): boolean {
+  if (!right) {
+    return false;
+  }
+  const rightKeys = new Set(personIdentityKeys(right));
+  return personIdentityKeys(left).some((key) => rightKeys.has(key));
+}
+
+function personIdentityKeys(person: ActivityPersonRow): string[] {
+  const rawSignUpId = firstString(person.raw, ["signUpId", "signupId", "signup_id", "joinId"]);
+  const signUpId = rawSignUpId || (person.source === "credit.credited" ? "" : person.signUpId);
+  const keys = [
+    signUpId ? `signup:${signUpId}` : "",
+    person.userId ? `user:${person.userId}` : "",
+    person.studentId ? `student:${person.studentId}` : "",
+    person.studentId || person.studentName ? `student-name:${person.studentId ?? ""}:${person.studentName}` : "",
+  ];
+  return [...new Set(keys.filter(Boolean))];
+}
+
+function userScoreIdFromCreditedPerson(person: ActivityPersonRow | undefined, member: ActivityPersonRow): string {
+  const userScoreId = person?.userScoreId || firstString(person?.raw, [
+    "userScoreId",
+    "userScoreID",
+    "userScoreIds",
+    "user_score_id",
+    "user_score_ids",
+    "scoreUserId",
+    "userCreditId",
+  ]);
+  if (userScoreId) {
+    return userScoreId;
+  }
+  const rawId = firstString(person?.raw, ["id"]);
+  return rawId && rawId !== person?.signUpId && rawId !== member.signUpId ? rawId : "";
+}
+
+function firstString(record: Record<string, unknown> | undefined, keys: string[]): string {
+  if (!record) {
+    return "";
+  }
+  const normalizedEntries = new Map(Object.entries(record).map(([key, value]) => [key.toLowerCase().replace(/[^\p{L}\p{N}]/gu, ""), value]));
+  for (const key of keys) {
+    const text = String(record[key] ?? normalizedEntries.get(key.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "")) ?? "").trim();
+    if (text) {
+      return text;
+    }
+  }
+  return "";
 }
 
 function preferredUserId(left?: string, right?: string): string | undefined {
