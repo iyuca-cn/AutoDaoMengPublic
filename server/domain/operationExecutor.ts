@@ -13,8 +13,8 @@ import { buildOperationPlanSummary } from "./operationPlans";
 export interface OperationExecutorClient {
   getSignCard(activityId: string): Promise<string | null>;
   getSignList(activityId: string, type: number): Promise<unknown[]>;
-  getCreditList(kind: keyof typeof CREDIT_LIST_URLS, activityId: string, scoreId: string): Promise<unknown[]>;
-  sendCredit(activityId: string, scoreId: string, userIds: string[]): Promise<boolean>;
+  getCreditList(kind: keyof typeof CREDIT_LIST_URLS, activityId: string, creditId: string): Promise<unknown[]>;
+  sendCredit(activityId: string, creditId: string, userIds: string[]): Promise<boolean>;
   resign(activityId: string, signUpIds: string[], isAll?: boolean): Promise<boolean>;
 }
 
@@ -34,7 +34,13 @@ export async function precheckOperationPlan(client: OperationExecutorClient, pla
 
   const unsignedRows = (await client.getSignList(plan.activityId, SIGN_TYPES.unsigned)).map((row) => normalizePerson(row));
   const signedRows = (await client.getSignList(plan.activityId, SIGN_TYPES.signed)).map((row) => normalizePerson(row));
-  const rowBySignUpId = new Map([...unsignedRows, ...signedRows].filter((row) => row.signUpId).map((row) => [row.signUpId as string, row]));
+  const signoutRows = (await client.getSignList(plan.activityId, SIGN_TYPES.signout)).map((row) => normalizePerson(row));
+  const leaveRows = (await client.getSignList(plan.activityId, SIGN_TYPES.leave)).map((row) => normalizePerson(row));
+  const rowBySignUpId = new Map(
+    [...unsignedRows, ...signedRows, ...signoutRows, ...leaveRows]
+      .filter((row) => row.signUpId)
+      .map((row) => [row.signUpId as string, row]),
+  );
   const unsignedIds = new Set(unsignedRows.map((row) => row.signUpId).filter((id): id is string => Boolean(id)));
   const creditedCache = new Map<string, Set<string>>();
 
@@ -47,7 +53,7 @@ export async function precheckOperationPlan(client: OperationExecutorClient, pla
     if (!currentPerson) {
       issues.push(actionIssue(action, "warning", "SIGNUP_NOT_IN_SIGN_LIST", `${action.studentName} 不在当前签到名单中，将按计划报名 ID 尝试执行`));
     }
-    if (!action.userId && currentPerson?.userId) {
+    if (isInvalidUserId(action.userId) && currentPerson?.userId && !isInvalidUserId(currentPerson.userId)) {
       action.userId = currentPerson.userId;
     }
     if ((action.kind === "resign" || action.kind === "resignThenIssueCredit") && !unsignedIds.has(action.signUpId)) {
@@ -56,14 +62,14 @@ export async function precheckOperationPlan(client: OperationExecutorClient, pla
     if (action.kind === "resign") {
       continue;
     }
-    if (!action.userId) {
-      issues.push(actionIssue(action, "error", "MISSING_USER_ID", `${action.studentName} 缺少 userId，不能按 userId 发放学分`));
+    if (isInvalidUserId(action.userId)) {
+      issues.push(actionIssue(action, "error", "MISSING_USER_ID", `${action.studentName} 缺少有效 userId，不能按用户 uid 发放学分`));
     }
     for (const item of action.creditItems) {
       if (item.remainingCapacity <= 0) {
         issues.push(actionIssue(action, "error", "NO_CREDIT_CAPACITY", `${item.creditType} 剩余容量不足`, item.scoreId));
       }
-      const credited = await creditedSignUpIds(client, creditedCache, plan.activityId, item.scoreId);
+      const credited = await creditedSignUpIds(client, creditedCache, plan.activityId, item.creditId);
       if (credited.has(action.signUpId)) {
         issues.push(actionIssue(action, "warning", "ALREADY_CREDITED", `${action.studentName} 已发放 ${item.creditType}，执行时会跳过`, item.scoreId));
       }
@@ -108,20 +114,21 @@ export async function executeOperationPlan(client: OperationExecutorClient, plan
     if (action.kind === "resign" || !canIssue) {
       continue;
     }
-    if (!action.userId) {
+    if (isInvalidUserId(action.userId)) {
       failedCount += action.creditItems.length;
-      onEvent?.(`${action.studentName} 缺少 userId，跳过发放`);
+      onEvent?.(`${action.studentName} 缺少有效 userId，跳过发放`);
       continue;
     }
+    const userId = String(action.userId ?? "").trim();
     for (const item of action.creditItems) {
-      const credited = await client.getCreditList("credited", plan.activityId, item.scoreId);
+      const credited = await client.getCreditList("credited", plan.activityId, item.creditId);
       const creditedSignUpIds = new Set(credited.map((row) => getFirstString(row, ["signUpId", "signupId", "id"])));
       if (creditedSignUpIds.has(action.signUpId)) {
         skippedAlreadyIssuedCount += 1;
         onEvent?.(`${action.studentName} 已发放 ${item.creditType}，跳过`);
         continue;
       }
-      const ok = await client.sendCredit(plan.activityId, item.scoreId, [action.userId]);
+      const ok = await client.sendCredit(plan.activityId, item.creditId, [userId]);
       if (ok) {
         issueSuccessCount += 1;
         onEvent?.(`已为 ${action.studentName} 发放 ${item.creditType}`);
@@ -137,6 +144,11 @@ export async function executeOperationPlan(client: OperationExecutorClient, plan
     skippedAlreadyIssuedCount,
     failedCount,
   };
+}
+
+function isInvalidUserId(value: unknown): boolean {
+  const text = String(value ?? "").trim();
+  return !text || /[\u4e00-\u9fff]/u.test(text);
 }
 
 export function applyPrecheck(plan: OperationPlan, report: OperationPrecheckReport): OperationPlan {
@@ -157,10 +169,10 @@ function actionCount(action: OperationAction): number {
   return resignCount + issueCount;
 }
 
-async function creditedSignUpIds(client: OperationExecutorClient, cache: Map<string, Set<string>>, activityId: string, scoreId: string): Promise<Set<string>> {
-  const key = `${activityId}:${scoreId}`;
+async function creditedSignUpIds(client: OperationExecutorClient, cache: Map<string, Set<string>>, activityId: string, creditId: string): Promise<Set<string>> {
+  const key = `${activityId}:${creditId}`;
   if (!cache.has(key)) {
-    const rows = await client.getCreditList("credited", activityId, scoreId);
+    const rows = await client.getCreditList("credited", activityId, creditId);
     cache.set(key, new Set(rows.map((row) => getFirstString(row, ["signUpId", "signupId", "id"])).filter(Boolean)));
   }
   return cache.get(key) ?? new Set();

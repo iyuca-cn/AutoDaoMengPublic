@@ -180,9 +180,9 @@ async function collectPreissuedPreview(client: PlanWorkflowClient, allocations: 
     for (const assignment of allocation.assignments) {
       let creditedCount = 0;
       for (const item of assignment.bundle.creditItems) {
-        const key = `${assignment.bundle.activityId}:${item.scoreId}`;
+        const key = `${assignment.bundle.activityId}:${item.creditId}`;
         if (!cache.has(key)) {
-          const rows = await client.getCreditList("credited", assignment.bundle.activityId, item.scoreId);
+          const rows = await client.getCreditList("credited", assignment.bundle.activityId, item.creditId);
           cache.set(key, new Set(rows.map((row) => getString(row, "signUpId"))));
         }
         if (cache.get(key)?.has(assignment.signUpId)) {

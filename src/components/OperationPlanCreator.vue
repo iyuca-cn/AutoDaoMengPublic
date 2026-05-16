@@ -84,10 +84,26 @@ function selectableMembers(detail: ActivityDetail): ActivityPersonRow[] {
     byKey.set(row.signUpId, {
       ...existing,
       ...row,
+      userId: preferredUserId(existing?.userId, row.userId),
       signStatus: existing?.signStatus ?? row.signStatus,
       admitStatus: existing?.admitStatus ?? row.admitStatus,
     });
   }
   return [...byKey.values()];
+}
+
+function preferredUserId(left?: string, right?: string): string | undefined {
+  if (isValidUserId(right)) {
+    return right;
+  }
+  if (isValidUserId(left)) {
+    return left;
+  }
+  return right || left;
+}
+
+function isValidUserId(value?: string): boolean {
+  const text = String(value ?? "").trim();
+  return Boolean(text) && !/[\u4e00-\u9fff]/u.test(text);
 }
 </script>

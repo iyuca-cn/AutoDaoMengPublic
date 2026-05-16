@@ -77,7 +77,7 @@ export function patchOperationPlan(plan: OperationPlan, input: PatchOperationPla
 
 export function buildOperationPlanSummary(actions: OperationAction[]): OperationPlanSummary {
   const enabled = actions.filter((action) => action.enabled);
-  const targetCreditKeys = new Set(enabled.flatMap((action) => action.creditItems.map((item) => `${item.activityId}:${item.scoreId}`)));
+  const targetCreditKeys = new Set(enabled.flatMap((action) => action.creditItems.map((item) => `${item.activityId}:${item.creditId}`)));
   return {
     actionCount: actions.length,
     enabledCount: enabled.length,
@@ -113,8 +113,8 @@ function normalizeCreditItems(kind: OperationKind, items: ActivityCreditItem[], 
     throw new Error("发放类操作必须选择学分项");
   }
   for (const item of items) {
-    if (!item.scoreId) {
-      throw new Error(`${item.creditType} 缺少 scoreId，不能生成发放计划`);
+    if (!item.creditId) {
+      throw new Error(`${item.creditType} 缺少 creditId，不能生成发放计划`);
     }
   }
   return uniqueCreditItems(items).map((item) => creditItemToOperationItem(item, activityId, activityName));
@@ -124,11 +124,36 @@ function uniqueMembers(members: ActivityPersonRow[]): ActivityPersonRow[] {
   const byKey = new Map<string, ActivityPersonRow>();
   for (const member of members) {
     const key = member.signUpId || `${member.studentId ?? ""}:${member.studentName}`;
-    if (!byKey.has(key)) {
-      byKey.set(key, member);
-    }
+    const existing = byKey.get(key);
+    byKey.set(key, mergeMember(existing, member));
   }
   return [...byKey.values()];
+}
+
+function mergeMember(existing: ActivityPersonRow | undefined, incoming: ActivityPersonRow): ActivityPersonRow {
+  if (!existing) {
+    return incoming;
+  }
+  return {
+    ...existing,
+    ...incoming,
+    userId: preferredUserId(existing.userId, incoming.userId),
+  };
+}
+
+function preferredUserId(left?: string, right?: string): string | undefined {
+  if (isValidUserId(right)) {
+    return right;
+  }
+  if (isValidUserId(left)) {
+    return left;
+  }
+  return right || left;
+}
+
+function isValidUserId(value?: string): boolean {
+  const text = String(value ?? "").trim();
+  return Boolean(text) && !/[\u4e00-\u9fff]/u.test(text);
 }
 
 function uniqueCreditItems(items: ActivityCreditItem[]): ActivityCreditItem[] {

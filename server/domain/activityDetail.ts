@@ -20,7 +20,7 @@ export interface ActivityDetailClient {
   getSignCard(activityId: string): Promise<string | null>;
   getSignList(activityId: string, type: number): Promise<unknown[]>;
   getCreditTypes(activityId: string): Promise<unknown[]>;
-  getCreditList(kind: keyof typeof CREDIT_LIST_URLS, activityId: string, scoreId: string): Promise<unknown[]>;
+  getCreditList(kind: keyof typeof CREDIT_LIST_URLS, activityId: string, creditId: string): Promise<unknown[]>;
   exportMembers(activityId: string, type: number): Promise<ArrayBuffer>;
 }
 
@@ -53,9 +53,9 @@ export async function buildActivityDetail(client: ActivityDetailClient, activity
     .filter((item): item is ActivityCreditItem => Boolean(item));
   const creditListsByScoreId: Record<string, ActivityCreditLists> = {};
   for (const item of creditItems) {
-    const candidates = (await client.getCreditList("candidates", normalizedActivityId, item.scoreId)).map((row) => normalizePerson(row, { source: "credit.candidates" }));
-    const other = (await client.getCreditList("other", normalizedActivityId, item.scoreId)).map((row) => normalizePerson(row, { source: "credit.other" }));
-    const credited = (await client.getCreditList("credited", normalizedActivityId, item.scoreId)).map((row) => normalizePerson(row, { source: "credit.credited" }));
+    const candidates = (await client.getCreditList("candidates", normalizedActivityId, item.creditId)).map((row) => normalizePerson(row, { source: "credit.candidates" }));
+    const other = (await client.getCreditList("other", normalizedActivityId, item.creditId)).map((row) => normalizePerson(row, { source: "credit.other" }));
+    const credited = (await client.getCreditList("credited", normalizedActivityId, item.creditId)).map((row) => normalizePerson(row, { source: "credit.credited" }));
     const creditedKeys = new Set(credited.map(personIdentityKey).filter(Boolean));
     const notSent = uniquePeople([...candidates, ...other].filter((person) => !creditedKeys.has(personIdentityKey(person))));
     creditListsByScoreId[item.scoreId] = {
@@ -265,9 +265,34 @@ function uniquePeople(people: ActivityPersonRow[]): ActivityPersonRow[] {
     const key = personIdentityKey(person) || crypto.randomUUID();
     if (!byKey.has(key)) {
       byKey.set(key, person);
+      continue;
     }
+    byKey.set(key, mergePerson(byKey.get(key) as ActivityPersonRow, person));
   }
   return [...byKey.values()];
+}
+
+function mergePerson(existing: ActivityPersonRow, incoming: ActivityPersonRow): ActivityPersonRow {
+  return {
+    ...existing,
+    ...incoming,
+    userId: preferredUserId(existing.userId, incoming.userId),
+  };
+}
+
+function preferredUserId(left?: string, right?: string): string | undefined {
+  if (isValidUserId(right)) {
+    return right;
+  }
+  if (isValidUserId(left)) {
+    return left;
+  }
+  return right || left;
+}
+
+function isValidUserId(value?: string): boolean {
+  const text = String(value ?? "").trim();
+  return Boolean(text) && !/[\u4e00-\u9fff]/u.test(text);
 }
 
 function sanitizeRaw(record: Record<string, unknown>): Record<string, unknown> {

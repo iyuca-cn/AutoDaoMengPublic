@@ -136,6 +136,7 @@ const allMembers = computed(() => {
     byKey.set(key, {
       ...existing,
       ...row,
+      userId: preferredUserId(existing?.userId, row.userId),
       signStatus: existing?.signStatus ?? row.signStatus,
       admitStatus: existing?.admitStatus ?? row.admitStatus,
     });
@@ -190,5 +191,20 @@ function selectAll() {
 
 function creditItemKey(item: ActivityCreditItem): string {
   return [item.scoreId, item.creditId, item.creditType, item.unitcountCent].join(":");
+}
+
+function preferredUserId(left?: string, right?: string): string | undefined {
+  if (isValidUserId(right)) {
+    return right;
+  }
+  if (isValidUserId(left)) {
+    return left;
+  }
+  return right || left;
+}
+
+function isValidUserId(value?: string): boolean {
+  const text = String(value ?? "").trim();
+  return Boolean(text) && !/[\u4e00-\u9fff]/u.test(text);
 }
 </script>

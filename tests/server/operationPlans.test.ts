@@ -65,14 +65,14 @@ describe("operation plans", () => {
     expect(plan.actions[0].creditItems.some((item) => item.scoreId === "score-1")).toBe(false);
   });
 
-  it("rejects issue credit plans with missing score id", () => {
+  it("rejects issue credit plans with missing credit id", () => {
     expect(() => createOperationPlan({
       kind: "issueCredit",
       activityId: "activity-1",
       activityName: "活动一",
       members: [member],
-      creditItems: [{ ...creditItem, scoreId: "" }],
-    })).toThrow("缺少 scoreId");
+      creditItems: [{ ...creditItem, creditId: "" }],
+    })).toThrow("缺少 creditId");
   });
 
   it("rejects missing signup id", () => {

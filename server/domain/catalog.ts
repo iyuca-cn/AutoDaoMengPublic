@@ -12,7 +12,7 @@ export interface CatalogClient {
   getSignCard(activityId: string): Promise<string | null>;
   getCreditTypes(activityId: string): Promise<unknown[]>;
   getSignList(activityId: string, type: number): Promise<unknown[]>;
-  getCreditList(kind: keyof typeof CREDIT_LIST_URLS, activityId: string, scoreId: string): Promise<unknown[]>;
+  getCreditList(kind: keyof typeof CREDIT_LIST_URLS, activityId: string, creditId: string): Promise<unknown[]>;
 }
 
 export interface ActivityOverviewItem {
@@ -92,7 +92,7 @@ async function buildActivityOverviewItem(
     const creditedEntries = await Promise.all(
       creditItems.map(async (item) => [
         item.scoreId,
-        await listCount(() => client.getCreditList("credited", normalizedActivityId, item.scoreId)),
+        await listCount(() => client.getCreditList("credited", normalizedActivityId, item.creditId)),
       ] as const),
     );
     return {

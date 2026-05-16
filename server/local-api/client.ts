@@ -108,21 +108,21 @@ export class DmLocalApiClient {
     return this.get("/credit/types-map", { activityId });
   }
 
-  async getCreditList(kind: keyof typeof CREDIT_LIST_URLS, activityId: string, scoreId: string): Promise<unknown[]> {
+  async getCreditList(kind: keyof typeof CREDIT_LIST_URLS, activityId: string, creditId: string): Promise<unknown[]> {
     return this.post("/credit/list", {
       url: CREDIT_LIST_URLS[kind],
       activityId,
-      scoreId,
+      scoreId: creditId,
     });
   }
 
-  async sendCredit(activityId: string, scoreId: string, userIds: string[]): Promise<boolean> {
+  async sendCredit(activityId: string, creditId: string, userIds: string[]): Promise<boolean> {
     if (userIds.length === 0) {
       throw new LocalApiError("userList 不能为空", { code: "EMPTY_USER_LIST" });
     }
     return this.post("/credit/send", {
       activityId,
-      scoreId,
+      scoreId: creditId,
       userList: userIds.join(","),
     });
   }

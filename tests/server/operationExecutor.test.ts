@@ -19,13 +19,41 @@ describe("operation executor", () => {
     const calls: string[] = [];
     const client = fakeClient({ calls });
     const result = await executeOperationPlan(client, plan("resignThenIssueCredit"));
-    expect(calls).toEqual(["resign:signup-1", "send:user-1"]);
+    expect(calls).toEqual(["credited:credit-1", "resign:signup-1", "credited:credit-1", "send:credit-1:user-1"]);
     expect(result.resignSuccessCount).toBe(1);
     expect(result.issueSuccessCount).toBe(1);
   });
+
+  it("uses creditId instead of scoreId for operation credit reads and writes", async () => {
+    const calls: string[] = [];
+    const client = fakeClient({ calls });
+    await executeOperationPlan(client, plan("issueCredit"));
+
+    expect(calls).toEqual(["credited:credit-1", "credited:credit-1", "send:credit-1:user-1"]);
+    expect(calls.some((call) => call.includes("score-1"))).toBe(false);
+  });
+
+  it("resolves the real user uid from sign lists when the plan has an invalid user id", async () => {
+    const calls: string[] = [];
+    const client = fakeClient({ calls, signRows: [{ signUpId: "signup-1", userId: "uid-actual" }] });
+
+    await executeOperationPlan(client, plan("issueCredit", { userId: "机械工程学院" }));
+
+    expect(calls).toEqual(["credited:credit-1", "credited:credit-1", "send:credit-1:uid-actual"]);
+  });
+
+  it("blocks issue actions when a valid user uid cannot be resolved", async () => {
+    const report = await precheckOperationPlan(
+      fakeClient({ signRows: [{ signUpId: "signup-1", userId: "机械工程学院" }] }),
+      plan("issueCredit", { userId: "机械工程学院" }),
+    );
+
+    expect(report.executable).toBe(false);
+    expect(report.issues.some((issue) => issue.code === "MISSING_USER_ID")).toBe(true);
+  });
 });
 
-function plan(kind: OperationPlan["kind"]): OperationPlan {
+function plan(kind: OperationPlan["kind"], overrides: { userId?: string } = {}): OperationPlan {
   return {
     id: "plan-1",
     name: "操作计划",
@@ -41,7 +69,7 @@ function plan(kind: OperationPlan["kind"]): OperationPlan {
       studentId: "20250001",
       studentName: "张三",
       signUpId: "signup-1",
-      userId: "user-1",
+      userId: overrides.userId ?? "user-1",
       enabled: true,
       status: "planned",
       creditItems: kind === "resign" ? [] : [{
@@ -68,17 +96,21 @@ function plan(kind: OperationPlan["kind"]): OperationPlan {
   };
 }
 
-function fakeClient(options: { signCard?: string | null; credited?: unknown[]; calls?: string[] } = {}): OperationExecutorClient {
+function fakeClient(options: { signCard?: string | null; credited?: unknown[]; calls?: string[]; signRows?: unknown[] } = {}): OperationExecutorClient {
+  const signRows = options.signRows ?? [{ signUpId: "signup-1", userId: "user-1" }];
   return {
     getSignCard: async () => options.signCard === undefined ? "card-1" : options.signCard,
-    getSignList: async (_activityId, type) => type === 1 ? [{ signUpId: "signup-1", userId: "user-1" }] : [],
-    getCreditList: async () => options.credited ?? [],
+    getSignList: async (_activityId, type) => type === 1 ? signRows : [],
+    getCreditList: async (_kind, _activityId, creditId) => {
+      options.calls?.push(`credited:${creditId}`);
+      return options.credited ?? [];
+    },
     resign: async (_activityId, signUpIds) => {
       options.calls?.push(`resign:${signUpIds[0]}`);
       return true;
     },
-    sendCredit: async (_activityId, _scoreId, userIds) => {
-      options.calls?.push(`send:${userIds[0]}`);
+    sendCredit: async (_activityId, creditId, userIds) => {
+      options.calls?.push(`send:${creditId}:${userIds[0]}`);
       return true;
     },
   };
