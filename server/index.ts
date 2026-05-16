@@ -8,7 +8,9 @@ import { JsonStore } from "./storage/jsonStore";
 export function createServerContext() {
   const config = loadConfig();
   const store = new JsonStore(config.dataDir);
-  const localApiClient = new DmLocalApiClient(config.localApi.baseUrl);
+  const localApiClient = new DmLocalApiClient(config.localApi.baseUrl, fetch, {
+    requestTimeoutMs: config.localApi.requestTimeoutMs,
+  });
   const localApiProcessManager = new LocalApiProcessManager(config.localApi);
   const sessionManager = new SessionManager(store, localApiClient);
   return {
@@ -24,6 +26,7 @@ if ((import.meta as ImportMeta & { main?: boolean }).main) {
   const context = createServerContext();
   Bun.serve({
     port: context.config.port,
+    idleTimeout: context.config.serverIdleTimeoutSeconds,
     async fetch(request) {
       return routeRequest(request, context);
     },

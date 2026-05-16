@@ -33,6 +33,9 @@
             <span class="inline-flex rounded px-2 py-1 text-xs font-medium" :class="item.hasSignCard ? 'bg-mint text-moss' : 'bg-red-50 text-clay'">
               {{ item.hasSignCard ? "有" : "无" }}
             </span>
+            <div v-if="item.readError" class="mt-1 max-w-56 text-xs text-clay">
+              {{ item.readError }}
+            </div>
           </td>
           <td>
             <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-slate-600">

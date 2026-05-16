@@ -7,6 +7,8 @@ describe("loadConfig", () => {
     expect(config.localApi.executablePath).toBe("E:\\work\\daomeng\\AutoDaoMengPublic\\src\\dist\\dmlocalapi_server.exe");
     expect(config.localApi.baseUrl).toBe("http://127.0.0.1:8765");
     expect(config.localApi.autoStart).toBe(true);
+    expect(config.localApi.requestTimeoutMs).toBe(8_000);
+    expect(config.serverIdleTimeoutSeconds).toBe(60);
   });
 
   it("accepts environment overrides", () => {
@@ -17,11 +19,15 @@ describe("loadConfig", () => {
       DMLOCALAPI_DISABLE_AUTOSTART: "1",
       DMLOCALAPI_PORT: "9000",
       DMLOCALAPI_START_ARGS: "--listen 9000",
+      DMLOCALAPI_REQUEST_TIMEOUT_MS: "12000",
+      SERVER_IDLE_TIMEOUT_SECONDS: "120",
     });
     expect(config.port).toBe(6000);
     expect(config.localApi.baseUrl).toBe("http://127.0.0.1:9000");
     expect(config.localApi.executablePath).toBe("/opt/dm/dmlocalapi");
     expect(config.localApi.autoStart).toBe(false);
     expect(config.localApi.startArgs).toEqual(["--listen", "9000"]);
+    expect(config.localApi.requestTimeoutMs).toBe(12_000);
+    expect(config.serverIdleTimeoutSeconds).toBe(120);
   });
 });

@@ -60,6 +60,7 @@ export interface ActivityOverviewItem {
   activityId: string;
   activityName: string;
   hasSignCard: boolean;
+  readError?: string;
   signCounts: {
     unsigned: number;
     signed: number;

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DmLocalApiClient } from "../../server/local-api/client";
 
 describe("DmLocalApiClient", () => {
@@ -41,5 +41,23 @@ describe("DmLocalApiClient", () => {
 
     expect(client.baseUrl).toBe("http://127.0.0.1:8766");
     expect(calls).toEqual(["http://127.0.0.1:8766/session/login"]);
+  });
+
+  it("aborts requests when the local proxy does not respond in time", async () => {
+    vi.useFakeTimers();
+    const signals: AbortSignal[] = [];
+    const client = new DmLocalApiClient("http://127.0.0.1:8765", (_input, init) => {
+      signals.push(init?.signal as AbortSignal);
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      });
+    }, { requestTimeoutMs: 5_000 });
+
+    const pending = expect(client.getManagedActivities()).rejects.toThrow("DM 本地代理请求超时");
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    await pending;
+    expect(signals[0].aborted).toBe(true);
+    vi.useRealTimers();
   });
 });

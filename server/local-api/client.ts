@@ -32,17 +32,24 @@ export interface FetchLike {
   (input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
 }
 
+export interface DmLocalApiClientOptions {
+  requestTimeoutMs?: number;
+}
+
 type JsonRecord = Record<string, unknown>;
 
 const SENSITIVE_KEYS = new Set(["uid", "token", "api_token", "pwd", "account"]);
+const DEFAULT_REQUEST_TIMEOUT_MS = 8_000;
 
 export class DmLocalApiClient {
   private currentBaseUrl: string;
   private readonly fetcher: FetchLike;
+  private readonly requestTimeoutMs: number;
 
-  constructor(baseUrl: string, fetcher: FetchLike = fetch) {
+  constructor(baseUrl: string, fetcher: FetchLike = fetch, options: DmLocalApiClientOptions = {}) {
     this.currentBaseUrl = normalizeBaseUrl(baseUrl);
     this.fetcher = fetcher;
+    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   }
 
   get baseUrl(): string {
@@ -146,7 +153,7 @@ export class DmLocalApiClient {
 
   async exportMembers(activityId: string, type: (typeof EXPORT_TYPES)[keyof typeof EXPORT_TYPES]): Promise<ArrayBuffer> {
     const url = this.buildUrl("/export/members", { activityId, type: String(type) });
-    const response = await this.fetcher(url);
+    const response = await this.fetchWithTimeout(url);
     const contentType = response.headers.get("content-type") ?? "";
     if (!response.ok || contentType.includes("application/json")) {
       await this.throwFromResponse(response);
@@ -155,12 +162,12 @@ export class DmLocalApiClient {
   }
 
   async get<T>(path: string, params?: JsonRecord): Promise<T> {
-    const response = await this.fetcher(this.buildUrl(path, params));
+    const response = await this.fetchWithTimeout(this.buildUrl(path, params));
     return this.readJsonResponse<T>(response);
   }
 
   async post<T>(path: string, body: JsonRecord = {}): Promise<T> {
-    const response = await this.fetcher(this.buildUrl(path), {
+    const response = await this.fetchWithTimeout(this.buildUrl(path), {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -189,6 +196,36 @@ export class DmLocalApiClient {
       }
     }
     return url.toString();
+  }
+
+  private async fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+    const timeoutMs = Math.max(1, this.requestTimeoutMs);
+    const controller = new AbortController();
+    const existingSignal = init.signal;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const abortFromCaller = () => controller.abort();
+    try {
+      if (existingSignal?.aborted) {
+        controller.abort();
+      } else {
+        existingSignal?.addEventListener("abort", abortFromCaller, { once: true });
+      }
+      return await this.fetcher(input, {
+        ...init,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new LocalApiError(`DM 本地代理请求超时：${timeoutMs}ms`, {
+          code: "LOCAL_API_TIMEOUT",
+          details: { url: String(input), timeoutMs },
+        });
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+      existingSignal?.removeEventListener("abort", abortFromCaller);
+    }
   }
 
   private async readJsonResponse<T>(response: Response): Promise<T> {

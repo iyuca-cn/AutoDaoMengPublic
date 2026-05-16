@@ -80,6 +80,7 @@ function createConfig(overrides: Partial<LocalApiConfig> = {}): LocalApiConfig {
     autoStart: true,
     port: 8765,
     startupTimeoutMs: 10_000,
+    requestTimeoutMs: 8_000,
     ...overrides,
   };
 }

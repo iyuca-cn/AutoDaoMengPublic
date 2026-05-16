@@ -4,12 +4,14 @@ export interface LocalApiConfig {
   autoStart: boolean;
   port: number;
   startupTimeoutMs: number;
+  requestTimeoutMs: number;
   workingDirectory?: string;
   startArgs?: string[];
 }
 
 export interface AppConfig {
   port: number;
+  serverIdleTimeoutSeconds: number;
   dataDir: string;
   localApi: LocalApiConfig;
 }
@@ -57,6 +59,7 @@ export function loadConfig(env: EnvSource = process.env): AppConfig {
 
   return {
     port,
+    serverIdleTimeoutSeconds: numberFromEnv(env.SERVER_IDLE_TIMEOUT_SECONDS, 60, "SERVER_IDLE_TIMEOUT_SECONDS"),
     dataDir: env.DATA_DIR || "./data",
     localApi: {
       baseUrl,
@@ -64,6 +67,7 @@ export function loadConfig(env: EnvSource = process.env): AppConfig {
       autoStart,
       port: localPort,
       startupTimeoutMs: numberFromEnv(env.DMLOCALAPI_STARTUP_TIMEOUT_MS, 10_000, "DMLOCALAPI_STARTUP_TIMEOUT_MS"),
+      requestTimeoutMs: numberFromEnv(env.DMLOCALAPI_REQUEST_TIMEOUT_MS, 8_000, "DMLOCALAPI_REQUEST_TIMEOUT_MS"),
       workingDirectory: env.DMLOCALAPI_WORKING_DIRECTORY || undefined,
       startArgs: parseStartArgs(env.DMLOCALAPI_START_ARGS),
     },

@@ -1,6 +1,7 @@
 declare const Bun: {
   serve(options: {
     port: number;
+    idleTimeout?: number;
     fetch(request: Request): Response | Promise<Response>;
   }): unknown;
   spawn(command: string[], options?: {

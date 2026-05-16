@@ -19,6 +19,7 @@ export interface ActivityOverviewItem {
   activityId: string;
   activityName: string;
   hasSignCard: boolean;
+  readError?: string;
   signCounts: Record<keyof typeof SIGN_TYPES, number>;
   creditItems: CreditItem[];
   creditedCounts: Record<string, number>;
@@ -30,7 +31,9 @@ export async function buildActivityBundles(client: CatalogClient, retryAttempts 
 
   for (const [activityId, rawActivity] of Object.entries(activities)) {
     const normalizedActivityId = getString(rawActivity, "activityId") || activityId;
-    const signCard = await retry(() => client.getSignCard(normalizedActivityId), retryAttempts, `活动 ${normalizedActivityId} 未能读取签到卡`);
+    const signCard = await retry(() => client.getSignCard(normalizedActivityId), retryAttempts, `活动 ${normalizedActivityId} 未能读取签到卡`, {
+      rejectEmpty: false,
+    });
     if (!signCard) {
       continue;
     }
@@ -55,33 +58,73 @@ export async function buildActivityBundles(client: CatalogClient, retryAttempts 
 
 export async function buildActivityOverview(client: CatalogClient, retryAttempts = 2): Promise<ActivityOverviewItem[]> {
   const activities = await retry(() => client.getManagedActivities(), retryAttempts, "读取可管理活动失败");
-  const overview: ActivityOverviewItem[] = [];
-  for (const [activityId, rawActivity] of Object.entries(activities)) {
-    const normalizedActivityId = getString(rawActivity, "activityId") || activityId;
-    const hasSignCard = Boolean(await retry(() => client.getSignCard(normalizedActivityId), retryAttempts, `活动 ${normalizedActivityId} 未能读取签到卡`));
+  return Promise.all(
+    Object.entries(activities).map(([activityId, rawActivity]) =>
+      buildActivityOverviewItem(client, activityId, rawActivity, retryAttempts),
+    ),
+  );
+}
+
+async function buildActivityOverviewItem(
+  client: CatalogClient,
+  activityId: string,
+  rawActivity: unknown,
+  retryAttempts: number,
+): Promise<ActivityOverviewItem> {
+  const normalizedActivityId = getString(rawActivity, "activityId") || activityId;
+  const activityName = getString(rawActivity, "name") || `活动 ${normalizedActivityId}`;
+  try {
+    const signCard = await retry(() => client.getSignCard(normalizedActivityId), retryAttempts, `活动 ${normalizedActivityId} 未能读取签到卡`, {
+      rejectEmpty: false,
+    });
+    if (!signCard) {
+      return emptyOverviewItem(normalizedActivityId, activityName, false);
+    }
     const creditItems = (await retry(() => client.getCreditTypes(normalizedActivityId), retryAttempts, `活动 ${normalizedActivityId} 未能读取学分项`))
       .map(creditItemFromRow)
       .filter((item): item is CreditItem => Boolean(item));
-    const signCounts = {
-      unsigned: await listCount(() => client.getSignList(normalizedActivityId, SIGN_TYPES.unsigned)),
-      signed: await listCount(() => client.getSignList(normalizedActivityId, SIGN_TYPES.signed)),
-      signout: await listCount(() => client.getSignList(normalizedActivityId, SIGN_TYPES.signout)),
-      leave: await listCount(() => client.getSignList(normalizedActivityId, SIGN_TYPES.leave)),
-    };
-    const creditedCounts: Record<string, number> = {};
-    for (const item of creditItems) {
-      creditedCounts[item.creditId] = await listCount(() => client.getCreditList("credited", normalizedActivityId, item.scoreId));
-    }
-    overview.push({
+    const [unsigned, signed, signout, leave] = await Promise.all([
+      listCount(() => client.getSignList(normalizedActivityId, SIGN_TYPES.unsigned)),
+      listCount(() => client.getSignList(normalizedActivityId, SIGN_TYPES.signed)),
+      listCount(() => client.getSignList(normalizedActivityId, SIGN_TYPES.signout)),
+      listCount(() => client.getSignList(normalizedActivityId, SIGN_TYPES.leave)),
+    ]);
+    const creditedEntries = await Promise.all(
+      creditItems.map(async (item) => [
+        item.creditId,
+        await listCount(() => client.getCreditList("credited", normalizedActivityId, item.scoreId)),
+      ] as const),
+    );
+    return {
       activityId: normalizedActivityId,
-      activityName: getString(rawActivity, "name") || `活动 ${normalizedActivityId}`,
-      hasSignCard,
-      signCounts,
+      activityName,
+      hasSignCard: true,
+      signCounts: { unsigned, signed, signout, leave },
       creditItems,
-      creditedCounts,
-    });
+      creditedCounts: Object.fromEntries(creditedEntries),
+    };
+  } catch (error) {
+    return {
+      ...emptyOverviewItem(normalizedActivityId, activityName, false),
+      readError: `活动 ${normalizedActivityId} 读取失败：${errorMessage(error)}`,
+    };
   }
-  return overview;
+}
+
+function emptyOverviewItem(activityId: string, activityName: string, hasSignCard: boolean): ActivityOverviewItem {
+  return {
+    activityId,
+    activityName,
+    hasSignCard,
+    signCounts: {
+      unsigned: 0,
+      signed: 0,
+      signout: 0,
+      leave: 0,
+    },
+    creditItems: [],
+    creditedCounts: {},
+  };
 }
 
 function creditItemFromRow(row: unknown): CreditItem | null {
@@ -102,12 +145,12 @@ function creditItemFromRow(row: unknown): CreditItem | null {
   }
 }
 
-async function retry<T>(fn: () => Promise<T>, attempts: number, message: string): Promise<T> {
+async function retry<T>(fn: () => Promise<T>, attempts: number, message: string, options: { rejectEmpty?: boolean } = {}): Promise<T> {
   let lastError: unknown;
   for (let index = 0; index < Math.max(1, attempts); index += 1) {
     try {
       const result = await fn();
-      if (result === null || result === undefined) {
+      if (options.rejectEmpty !== false && (result === null || result === undefined)) {
         throw new Error(message);
       }
       return result;
@@ -116,6 +159,10 @@ async function retry<T>(fn: () => Promise<T>, attempts: number, message: string)
     }
   }
   throw lastError instanceof Error ? lastError : new Error(message);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function listCount(fn: () => Promise<unknown[]>): Promise<number> {
