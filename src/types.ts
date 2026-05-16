@@ -1,4 +1,15 @@
 export type SupportedCreditType = "美育实践学分" | "思想成长学分" | "劳动教育学分" | "体育活动学分";
+export type SessionSource = "account" | "exportUrl";
+export type OperationKind = "resign" | "issueCredit" | "resignThenIssueCredit";
+export type OperationPlanStatus = "draft" | "ready" | "running" | "completed" | "failed" | "cancelled";
+export type AssignmentStatus = "planned" | "disabled" | "issued" | "skipped" | "failed";
+
+export interface SessionStatus {
+  authenticated: boolean;
+  source?: SessionSource;
+  savedAt?: string;
+  lastVerifiedAt?: string;
+}
 
 export interface CreditItem {
   creditId: string;
@@ -6,6 +17,43 @@ export interface CreditItem {
   creditType: SupportedCreditType;
   unitcountCent: number;
   remainingCapacity: number;
+}
+
+export interface ActivityCreditItem extends CreditItem {
+  totalCapacity: number;
+  issuedCount: number;
+}
+
+export type SignListKey = "unsigned" | "signed" | "signout" | "leave";
+export type MemberListKey = "register" | "admit" | "leave";
+export type SignStatus = SignListKey | "unknown";
+export type AdmitStatus = MemberListKey | "unknown";
+
+export interface ActivityPersonRow {
+  studentId?: string;
+  studentName: string;
+  signUpId?: string;
+  userId?: string;
+  signStatus?: SignStatus;
+  admitStatus?: AdmitStatus;
+  source?: string;
+}
+
+export interface ActivityCreditLists {
+  candidates: ActivityPersonRow[];
+  other: ActivityPersonRow[];
+  credited: ActivityPersonRow[];
+  notSent: ActivityPersonRow[];
+}
+
+export interface ActivityDetail {
+  activityId: string;
+  activityName: string;
+  hasSignCard: boolean;
+  signLists: Record<SignListKey, ActivityPersonRow[]>;
+  memberLists: Record<MemberListKey, ActivityPersonRow[]>;
+  creditItems: ActivityCreditItem[];
+  creditListsByScoreId: Record<string, ActivityCreditLists>;
 }
 
 export interface ActivityOverviewItem {
@@ -114,6 +162,8 @@ export interface DemandAllocation {
 export interface ExecutionTask {
   id: string;
   planId: string;
+  targetType?: "creditPlan" | "operationPlan";
+  targetId?: string;
   status: "pending" | "running" | "completed" | "failed" | "cancelled";
   createdAt: string;
   updatedAt: string;
@@ -124,6 +174,66 @@ export interface ExecutionTask {
     skippedAlreadyIssuedCount: number;
     failedCount: number;
   };
+}
+
+export interface OperationCreditItem extends ActivityCreditItem {
+  activityId: string;
+  activityName: string;
+}
+
+export interface OperationAction {
+  id: string;
+  kind: OperationKind;
+  studentId?: string;
+  studentName: string;
+  signUpId: string;
+  userId?: string;
+  creditItems: OperationCreditItem[];
+  enabled: boolean;
+  status: AssignmentStatus;
+  note?: string;
+}
+
+export interface OperationPlanSummary {
+  actionCount: number;
+  enabledCount: number;
+  targetMemberCount: number;
+  targetCreditItemCount: number;
+  expectedResignCount: number;
+  expectedIssueCount: number;
+}
+
+export interface OperationPrecheckIssue {
+  level: "error" | "warning";
+  code: string;
+  message: string;
+  actionId?: string;
+  activityId?: string;
+  studentId?: string;
+  signUpId?: string;
+  scoreId?: string;
+}
+
+export interface OperationPrecheckReport {
+  planId: string;
+  executable: boolean;
+  issues: OperationPrecheckIssue[];
+  actionCount: number;
+  normalizedActions: OperationAction[];
+}
+
+export interface OperationPlan {
+  id: string;
+  name: string;
+  kind: OperationKind;
+  activityId: string;
+  activityName: string;
+  createdAt: string;
+  updatedAt: string;
+  status: OperationPlanStatus;
+  actions: OperationAction[];
+  precheck?: OperationPrecheckReport;
+  summary: OperationPlanSummary;
 }
 
 export function formatCent(value: number | null | undefined): string {

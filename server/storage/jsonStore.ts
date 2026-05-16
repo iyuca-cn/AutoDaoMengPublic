@@ -1,13 +1,14 @@
-import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { AuditLogEntry, ExecutionTask, ImportBatch, Plan } from "../domain/models";
+import type { AuditLogEntry, ExecutionTask, ImportBatch, OperationPlan, Plan, StoredSession } from "../domain/models";
 
-type CollectionName = "imports" | "plans" | "tasks";
-type StoredEntity = ImportBatch | Plan | ExecutionTask;
+type CollectionName = "imports" | "plans" | "tasks" | "operation-plans";
+type StoredEntity = ImportBatch | Plan | ExecutionTask | OperationPlan;
 type EntityMap = {
   imports: ImportBatch;
   plans: Plan;
   tasks: ExecutionTask;
+  "operation-plans": OperationPlan;
 };
 
 export class JsonStore {
@@ -53,11 +54,36 @@ export class JsonStore {
     return updated;
   }
 
-  async appendAudit<K extends "imports" | "plans">(collection: K, id: string, entry: AuditLogEntry): Promise<EntityMap[K]> {
+  async appendAudit<K extends "imports" | "plans" | "operation-plans">(collection: K, id: string, entry: AuditLogEntry): Promise<EntityMap[K]> {
     return this.update(collection, id, (entity) => ({
       ...entity,
       auditLogs: [...entity.auditLogs, entry],
     }));
+  }
+
+  async readSession(): Promise<StoredSession | null> {
+    try {
+      const content = await readFile(this.sessionPath(), "utf-8");
+      return JSON.parse(content) as StoredSession;
+    } catch (error) {
+      if (isNotFound(error)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async writeSession(session: StoredSession): Promise<StoredSession> {
+    const target = this.sessionPath();
+    await mkdir(dirname(target), { recursive: true });
+    const tmp = `${target}.${crypto.randomUUID()}.tmp`;
+    await writeFile(tmp, `${JSON.stringify(session, null, 2)}\n`, "utf-8");
+    await rename(tmp, target);
+    return session;
+  }
+
+  async deleteSession(): Promise<void> {
+    await rm(this.sessionPath(), { force: true });
   }
 
   private async write(collection: CollectionName, id: string, entity: StoredEntity): Promise<void> {
@@ -77,6 +103,10 @@ export class JsonStore {
       throw new Error(`非法 ID：${id}`);
     }
     return join(this.collectionDir(collection), `${id}.json`);
+  }
+
+  private sessionPath(): string {
+    return join(this.rootDir, "session", "session.json");
   }
 }
 

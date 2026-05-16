@@ -1,0 +1,66 @@
+<template>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>学分项</th>
+          <th>分值</th>
+          <th>容量</th>
+          <th>候选</th>
+          <th>其他</th>
+          <th>已发</th>
+          <th>未发</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-line">
+        <tr v-for="item in creditItems" :key="item.scoreId">
+          <td>
+            <label class="inline-flex items-center gap-2">
+              <input
+                class="h-4 w-4 accent-moss"
+                type="checkbox"
+                :checked="selectedScoreIds.includes(item.scoreId)"
+                @change="$emit('toggle-credit', item.scoreId)"
+              />
+              <span class="font-medium">{{ item.creditType }}</span>
+            </label>
+            <div class="text-xs text-slate-500">{{ item.scoreId }}</div>
+          </td>
+          <td>{{ formatCent(item.unitcountCent) }}</td>
+          <td>{{ item.issuedCount }} / {{ item.totalCapacity }}，剩余 {{ item.remainingCapacity }}</td>
+          <td>{{ lists(item.scoreId).candidates.length }}</td>
+          <td>{{ lists(item.scoreId).other.length }}</td>
+          <td>{{ lists(item.scoreId).credited.length }}</td>
+          <td>{{ lists(item.scoreId).notSent.length }}</td>
+        </tr>
+        <tr v-if="creditItems.length === 0">
+          <td colspan="7" class="py-8 text-center text-slate-500">暂无可用学分项</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</template>
+
+<script setup lang="ts">
+import type { ActivityCreditItem, ActivityCreditLists } from "../types";
+import { formatCent } from "../types";
+
+const props = defineProps<{
+  creditItems: ActivityCreditItem[];
+  creditListsByScoreId: Record<string, ActivityCreditLists>;
+  selectedScoreIds: string[];
+}>();
+
+defineEmits<{
+  "toggle-credit": [scoreId: string];
+}>();
+
+function lists(scoreId: string): ActivityCreditLists {
+  return props.creditListsByScoreId[scoreId] ?? {
+    candidates: [],
+    other: [],
+    credited: [],
+    notSent: [],
+  };
+}
+</script>

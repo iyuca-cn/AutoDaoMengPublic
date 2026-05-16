@@ -1,4 +1,5 @@
 import { loadConfig } from "./config";
+import { SessionManager } from "./domain/session";
 import { DmLocalApiClient } from "./local-api/client";
 import { LocalApiProcessManager } from "./local-api/process";
 import { routeRequest } from "./routes/router";
@@ -9,11 +10,13 @@ export function createServerContext() {
   const store = new JsonStore(config.dataDir);
   const localApiClient = new DmLocalApiClient(config.localApi.baseUrl);
   const localApiProcessManager = new LocalApiProcessManager(config.localApi);
+  const sessionManager = new SessionManager(store, localApiClient);
   return {
     config,
     store,
     localApiClient,
     localApiProcessManager,
+    sessionManager,
   };
 }
 

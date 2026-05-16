@@ -11,10 +11,18 @@
           刷新计划
         </button>
       </div>
+      <div class="mt-4 flex flex-wrap gap-2">
+        <button class="text-button" :class="planType === 'credit' ? 'border-moss bg-mint text-moss' : ''" type="button" @click="planType = 'credit'">
+          Excel 学分计划
+        </button>
+        <button class="text-button" :class="planType === 'operation' ? 'border-moss bg-mint text-moss' : ''" type="button" @click="planType = 'operation'">
+          活动操作计划
+        </button>
+      </div>
       <p v-if="error" class="mt-3 rounded border border-clay/30 bg-red-50 px-3 py-2 text-sm text-clay">{{ error }}</p>
     </div>
 
-    <div class="grid gap-4 lg:grid-cols-[18rem_1fr]">
+    <div v-if="planType === 'credit'" class="grid gap-4 lg:grid-cols-[18rem_1fr]">
       <aside class="panel p-3">
         <div class="grid gap-2">
           <button
@@ -68,40 +76,87 @@
         </div>
       </article>
     </div>
+
+    <div v-else class="grid gap-4 lg:grid-cols-[18rem_1fr]">
+      <aside class="panel p-3">
+        <div class="grid gap-2">
+          <button
+            v-for="plan in operationPlans"
+            :key="plan.id"
+            type="button"
+            class="text-left rounded border border-line bg-white px-3 py-2 hover:border-moss"
+            :class="selectedOperationPlan?.id === plan.id ? 'border-moss bg-mint' : ''"
+            @click="selectOperation(plan)"
+          >
+            <div class="font-medium">{{ plan.name }}</div>
+            <div class="mt-1 text-xs text-slate-500">{{ plan.status }} · {{ plan.summary.enabledCount }} 项</div>
+          </button>
+          <p v-if="operationPlans.length === 0" class="text-sm text-slate-500">暂无活动操作计划</p>
+        </div>
+      </aside>
+
+      <article v-if="selectedOperationPlan" class="panel p-4">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 class="text-base font-semibold">{{ selectedOperationPlan.name }}</h3>
+            <p class="mt-1 text-sm text-slate-600">{{ selectedOperationPlan.activityName }} · {{ selectedOperationPlan.status }} · {{ selectedOperationPlan.createdAt }}</p>
+          </div>
+          <button class="primary-button" type="button" :disabled="saving || !canEditOperation" @click="saveOperationPlan">
+            <Save class="h-4 w-4" />
+            保存修改
+          </button>
+        </div>
+        <OperationPlanTable class="mt-4" :plan="selectedOperationPlan" v-model="editableOperationActions" :readonly="!canEditOperation" />
+      </article>
+    </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { Download, RefreshCw, Save } from "lucide-vue-next";
 import { apiGet, apiPatch, downloadUrl } from "../api";
+import OperationPlanTable from "../components/OperationPlanTable.vue";
 import PlanActivityView from "../components/PlanActivityView.vue";
 import PlanAllocationTable from "../components/PlanAllocationTable.vue";
 import PlanStudentView from "../components/PlanStudentView.vue";
 import PlanSummary from "../components/PlanSummary.vue";
-import type { DemandAllocation, Plan } from "../types";
+import type { DemandAllocation, OperationAction, OperationPlan, Plan } from "../types";
 
 const plans = ref<Plan[]>([]);
+const operationPlans = ref<OperationPlan[]>([]);
 const selectedPlan = ref<Plan | null>(null);
+const selectedOperationPlan = ref<OperationPlan | null>(null);
 const editableAllocations = ref<DemandAllocation[]>([]);
+const editableOperationActions = ref<OperationAction[]>([]);
 const error = ref("");
 const saving = ref(false);
 const viewMode = ref("allocations");
+const planType = ref<"credit" | "operation">("credit");
 const modes = [
   { key: "allocations", label: "按分配" },
   { key: "students", label: "按人" },
   { key: "activities", label: "按活动" },
   { key: "exceptions", label: "按异常" },
 ];
+const canEditOperation = computed(() => Boolean(selectedOperationPlan.value && ["draft", "ready"].includes(selectedOperationPlan.value.status)));
 
 onMounted(load);
 
 async function load() {
   error.value = "";
   try {
-    plans.value = await apiGet<Plan[]>("/api/plans");
+    const [credit, operation] = await Promise.all([
+      apiGet<Plan[]>("/api/plans"),
+      apiGet<OperationPlan[]>("/api/operation-plans"),
+    ]);
+    plans.value = credit;
+    operationPlans.value = operation;
     if (!selectedPlan.value && plans.value.length > 0) {
       select(plans.value[0]);
+    }
+    if (!selectedOperationPlan.value && operationPlans.value.length > 0) {
+      selectOperation(operationPlans.value[0]);
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
@@ -113,6 +168,11 @@ function select(plan: Plan) {
   editableAllocations.value = structuredClone(plan.allocations);
 }
 
+function selectOperation(plan: OperationPlan) {
+  selectedOperationPlan.value = plan;
+  editableOperationActions.value = structuredClone(plan.actions);
+}
+
 async function savePlan() {
   if (!selectedPlan.value) {
     return;
@@ -122,6 +182,24 @@ async function savePlan() {
   try {
     selectedPlan.value = await apiPatch<Plan>(`/api/plans/${selectedPlan.value.id}`, {
       allocations: editableAllocations.value,
+    });
+    await load();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function saveOperationPlan() {
+  if (!selectedOperationPlan.value) {
+    return;
+  }
+  saving.value = true;
+  error.value = "";
+  try {
+    selectedOperationPlan.value = await apiPatch<OperationPlan>(`/api/operation-plans/${selectedOperationPlan.value.id}`, {
+      actions: editableOperationActions.value,
     });
     await load();
   } catch (err) {

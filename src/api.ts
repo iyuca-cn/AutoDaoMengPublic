@@ -31,6 +31,13 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   return readResponse<T>(response);
 }
 
+export async function apiDelete<T>(path: string): Promise<T> {
+  const response = await fetch(path, {
+    method: "DELETE",
+  });
+  return readResponse<T>(response);
+}
+
 async function readResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {

@@ -27,8 +27,27 @@ export const CREDIT_LIST_URLS = {
 } as const;
 
 export type PlanStatus = "draft" | "ready" | "running" | "completed" | "failed" | "cancelled";
+export type OperationPlanStatus = PlanStatus;
 export type AssignmentStatus = "planned" | "disabled" | "issued" | "skipped" | "failed";
 export type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+export type SessionSource = "account" | "exportUrl";
+export type OperationKind = "resign" | "issueCredit" | "resignThenIssueCredit";
+export type TaskTargetType = "creditPlan" | "operationPlan";
+
+export interface StoredSession {
+  uid: string;
+  token: string;
+  source: SessionSource;
+  savedAt: string;
+  lastVerifiedAt?: string;
+}
+
+export interface SessionStatus {
+  authenticated: boolean;
+  source?: SessionSource;
+  savedAt?: string;
+  lastVerifiedAt?: string;
+}
 
 export interface DemandRecord {
   studentId: string;
@@ -82,6 +101,44 @@ export interface CreditItem {
   creditType: SupportedCreditType;
   unitcountCent: number;
   remainingCapacity: number;
+}
+
+export interface ActivityCreditItem extends CreditItem {
+  totalCapacity: number;
+  issuedCount: number;
+}
+
+export type SignListKey = "unsigned" | "signed" | "signout" | "leave";
+export type MemberListKey = "register" | "admit" | "leave";
+export type SignStatus = SignListKey | "unknown";
+export type AdmitStatus = MemberListKey | "unknown";
+
+export interface ActivityPersonRow {
+  studentId?: string;
+  studentName: string;
+  signUpId?: string;
+  userId?: string;
+  signStatus?: SignStatus;
+  admitStatus?: AdmitStatus;
+  source?: string;
+  raw?: Record<string, unknown>;
+}
+
+export interface ActivityCreditLists {
+  candidates: ActivityPersonRow[];
+  other: ActivityPersonRow[];
+  credited: ActivityPersonRow[];
+  notSent: ActivityPersonRow[];
+}
+
+export interface ActivityDetail {
+  activityId: string;
+  activityName: string;
+  hasSignCard: boolean;
+  signLists: Record<SignListKey, ActivityPersonRow[]>;
+  memberLists: Record<MemberListKey, ActivityPersonRow[]>;
+  creditItems: ActivityCreditItem[];
+  creditListsByScoreId: Record<string, ActivityCreditLists>;
 }
 
 export interface ActivityBundle {
@@ -181,6 +238,8 @@ export interface ExecutionEvent {
 export interface ExecutionTask {
   id: string;
   planId: string;
+  targetType?: TaskTargetType;
+  targetId?: string;
   status: TaskStatus;
   createdAt: string;
   updatedAt: string;
@@ -201,6 +260,67 @@ export interface AuditLogEntry {
   action: string;
   actor: "system" | "user";
   details?: Record<string, unknown>;
+}
+
+export interface OperationCreditItem extends ActivityCreditItem {
+  activityId: string;
+  activityName: string;
+}
+
+export interface OperationAction {
+  id: string;
+  kind: OperationKind;
+  studentId?: string;
+  studentName: string;
+  signUpId: string;
+  userId?: string;
+  creditItems: OperationCreditItem[];
+  enabled: boolean;
+  status: AssignmentStatus;
+  note?: string;
+}
+
+export interface OperationPlanSummary {
+  actionCount: number;
+  enabledCount: number;
+  targetMemberCount: number;
+  targetCreditItemCount: number;
+  expectedResignCount: number;
+  expectedIssueCount: number;
+}
+
+export interface OperationPrecheckIssue {
+  level: "error" | "warning";
+  code: string;
+  message: string;
+  actionId?: string;
+  activityId?: string;
+  studentId?: string;
+  signUpId?: string;
+  scoreId?: string;
+}
+
+export interface OperationPrecheckReport {
+  planId: string;
+  executable: boolean;
+  issues: OperationPrecheckIssue[];
+  actionCount: number;
+  normalizedActions: OperationAction[];
+}
+
+export interface OperationPlan {
+  id: string;
+  name: string;
+  kind: OperationKind;
+  activityId: string;
+  activityName: string;
+  createdAt: string;
+  updatedAt: string;
+  status: OperationPlanStatus;
+  actions: OperationAction[];
+  precheck?: OperationPrecheckReport;
+  summary: OperationPlanSummary;
+  auditLogs: AuditLogEntry[];
 }
 
 export function normalizeText(value: unknown): string {

@@ -17,6 +17,8 @@ export class TaskRunner {
     const task: ExecutionTask = {
       id: crypto.randomUUID(),
       planId: plan.id,
+      targetType: "creditPlan",
+      targetId: plan.id,
       status: "running",
       createdAt: now,
       updatedAt: now,

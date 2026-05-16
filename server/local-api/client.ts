@@ -166,7 +166,7 @@ export class DmLocalApiClient {
     return Object.fromEntries(
       Object.entries(payload).map(([key, value]) => [
         key,
-        SENSITIVE_KEYS.has(key) ? maskSecret(value) : summarizeValue(value),
+        SENSITIVE_KEYS.has(key) ? maskSecret(value) : summarizeValue(key, value),
       ]),
     );
   }
@@ -238,7 +238,10 @@ function maskSecret(value: unknown): string {
   return `${text.slice(0, 3)}***${text.slice(-3)}`;
 }
 
-function summarizeValue(value: unknown): unknown {
+function summarizeValue(key: string, value: unknown): unknown {
+  if (key.toLowerCase().includes("url") && typeof value === "string") {
+    return summarizeUrl(value);
+  }
   if (Array.isArray(value)) {
     return { count: value.length, sample: value.slice(0, 3).map((item) => String(item)) };
   }
@@ -246,4 +249,13 @@ function summarizeValue(value: unknown): unknown {
     return `${value.slice(0, 80)}...(len=${value.length})`;
   }
   return value;
+}
+
+function summarizeUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname}?${[...url.searchParams.keys()].sort().join("&")}`;
+  } catch {
+    return value.length > 40 ? `${value.slice(0, 40)}...(len=${value.length})` : value;
+  }
 }

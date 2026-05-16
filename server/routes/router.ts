@@ -3,18 +3,22 @@ import type { RouteContext } from "./context";
 import { handleActivityRoutes } from "./activityRoutes";
 import { handleConfigRoutes } from "./configRoutes";
 import { handleImportRoutes } from "./importRoutes";
+import { handleOperationPlanRoutes } from "./operationPlanRoutes";
 import { handlePlanRoutes } from "./planRoutes";
 import { handleRandomDrainRoutes } from "./randomDrainRoutes";
 import { handleReportRoutes } from "./reportRoutes";
+import { handleSessionRoutes } from "./sessionRoutes";
 import { handleTaskRoutes } from "./taskRoutes";
 
 type RouteHandler = (request: Request, context: RouteContext) => Promise<Response | null>;
 
 const handlers: RouteHandler[] = [
   handleConfigRoutes,
+  handleSessionRoutes,
   handleActivityRoutes,
   handleImportRoutes,
   handlePlanRoutes,
+  handleOperationPlanRoutes,
   handleTaskRoutes,
   handleReportRoutes,
   handleRandomDrainRoutes,
@@ -62,7 +66,7 @@ function withCors(response: Response): Response {
 function corsHeaders(): Record<string, string> {
   return {
     "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
     "access-control-allow-headers": "content-type",
   };
 }

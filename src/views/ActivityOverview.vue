@@ -17,8 +17,16 @@
       <p v-if="error" class="mt-3 rounded border border-clay/30 bg-red-50 px-3 py-2 text-sm text-clay">{{ error }}</p>
     </div>
 
-    <div class="panel overflow-hidden">
-      <ActivityTable :items="filteredItems" :selected-ids="selectedIds" @toggle="toggle" />
+    <ActivityDetail
+      v-if="detail"
+      :detail="detail"
+      @back="detail = null"
+      @refresh="loadDetail(detail.activityId)"
+      @plan-created="onPlanCreated"
+    />
+
+    <div v-else class="panel overflow-hidden">
+      <ActivityTable :items="filteredItems" :selected-ids="selectedIds" @toggle="toggle" @open="loadDetail" />
       <SelectionBar
         :selected-count="selectedIds.length"
         @select-all="selectAll"
@@ -50,12 +58,18 @@
 import { computed, onMounted, ref } from "vue";
 import { BadgeCheck, Ban, ListPlus, RefreshCw, UserCheck } from "lucide-vue-next";
 import { apiGet } from "../api";
+import ActivityDetail from "../components/ActivityDetail.vue";
 import ActivityTable from "../components/ActivityTable.vue";
 import DataToolbar from "../components/DataToolbar.vue";
 import SelectionBar from "../components/SelectionBar.vue";
-import type { ActivityOverviewItem } from "../types";
+import type { ActivityDetail as ActivityDetailType, ActivityOverviewItem, OperationPlan } from "../types";
+
+const emit = defineEmits<{
+  "open-plans": [];
+}>();
 
 const items = ref<ActivityOverviewItem[]>([]);
+const detail = ref<ActivityDetailType | null>(null);
 const loading = ref(false);
 const error = ref("");
 const selectedIds = ref<string[]>([]);
@@ -95,6 +109,22 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+
+async function loadDetail(activityId: string) {
+  loading.value = true;
+  error.value = "";
+  try {
+    detail.value = await apiGet<ActivityDetailType>(`/api/activities/${activityId}`);
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    loading.value = false;
+  }
+}
+
+function onPlanCreated(_plan: OperationPlan) {
+  emit("open-plans");
 }
 
 function toggle(activityId: string) {

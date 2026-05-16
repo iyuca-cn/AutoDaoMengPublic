@@ -20,8 +20,8 @@
           <span class="label">选择计划</span>
           <select class="field" v-model="selectedPlanId">
             <option value="">请选择</option>
-            <option v-for="plan in executablePlans" :key="plan.id" :value="plan.id">
-              {{ plan.name }} · {{ plan.status }}
+            <option v-for="plan in executablePlans" :key="plan.key" :value="plan.key">
+              {{ plan.label }} · {{ plan.status }}
             </option>
           </select>
         </label>
@@ -32,7 +32,7 @@
           </button>
           <label class="grid gap-1">
             <span class="label">确认文本</span>
-            <input class="field" v-model="confirmText" placeholder="输入 执行计划" />
+            <input class="field" v-model="confirmText" :placeholder="`输入 ${requiredConfirmText}`" />
           </label>
           <button class="danger-button justify-center" type="button" :disabled="!canExecute" @click="execute">
             <PlayCircle class="h-4 w-4" />
@@ -66,9 +66,10 @@ import { apiGet, apiPost, downloadUrl } from "../api";
 import ExecutionPrecheck from "../components/ExecutionPrecheck.vue";
 import ExecutionProgress from "../components/ExecutionProgress.vue";
 import ExecutionResults from "../components/ExecutionResults.vue";
-import type { ExecutionTask, Plan } from "../types";
+import type { ExecutionTask, OperationPlan, Plan } from "../types";
 
 const plans = ref<Plan[]>([]);
+const operationPlans = ref<OperationPlan[]>([]);
 const selectedPlanId = ref("");
 const precheck = ref<{ executable: boolean; actionCount: number; issues: Array<{ level: string; code: string; message: string }> } | null>(null);
 const task = ref<ExecutionTask | null>(null);
@@ -76,28 +77,47 @@ const confirmText = ref("");
 const running = ref(false);
 const error = ref("");
 
-const executablePlans = computed(() => plans.value.filter((plan) => ["draft", "ready"].includes(plan.status)));
-const canExecute = computed(() => Boolean(selectedPlanId.value && precheck.value?.executable && confirmText.value === "执行计划" && !running.value));
+type ExecutablePlanOption = { key: string; id: string; type: "credit" | "operation"; label: string; status: string };
+
+const executablePlans = computed<ExecutablePlanOption[]>(() => [
+  ...plans.value
+    .filter((plan) => ["draft", "ready"].includes(plan.status))
+    .map((plan) => ({ key: `credit:${plan.id}`, id: plan.id, type: "credit" as const, label: `Excel · ${plan.name}`, status: plan.status })),
+  ...operationPlans.value
+    .filter((plan) => ["draft", "ready"].includes(plan.status))
+    .map((plan) => ({ key: `operation:${plan.id}`, id: plan.id, type: "operation" as const, label: `操作 · ${plan.name}`, status: plan.status })),
+]);
+const selectedPlan = computed(() => executablePlans.value.find((plan) => plan.key === selectedPlanId.value) ?? null);
+const requiredConfirmText = computed(() => selectedPlan.value?.type === "operation" ? "执行操作计划" : "执行计划");
+const canExecute = computed(() => Boolean(selectedPlan.value && precheck.value?.executable && confirmText.value === requiredConfirmText.value && !running.value));
 
 onMounted(load);
 
 async function load() {
   error.value = "";
   try {
-    plans.value = await apiGet<Plan[]>("/api/plans");
+    const [credit, operation] = await Promise.all([
+      apiGet<Plan[]>("/api/plans"),
+      apiGet<OperationPlan[]>("/api/operation-plans"),
+    ]);
+    plans.value = credit;
+    operationPlans.value = operation;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   }
 }
 
 async function runPrecheck() {
-  if (!selectedPlanId.value) {
+  if (!selectedPlan.value) {
     return;
   }
   running.value = true;
   error.value = "";
   try {
-    precheck.value = await apiPost(`/api/plans/${selectedPlanId.value}/precheck`);
+    const path = selectedPlan.value.type === "operation"
+      ? `/api/operation-plans/${selectedPlan.value.id}/precheck`
+      : `/api/plans/${selectedPlan.value.id}/precheck`;
+    precheck.value = await apiPost(path);
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
@@ -106,13 +126,17 @@ async function runPrecheck() {
 }
 
 async function execute() {
-  if (!canExecute.value) {
+  if (!canExecute.value || !selectedPlan.value) {
     return;
   }
   running.value = true;
   error.value = "";
   try {
-    task.value = await apiPost<ExecutionTask>(`/api/plans/${selectedPlanId.value}/execute`);
+    const path = selectedPlan.value.type === "operation"
+      ? `/api/operation-plans/${selectedPlan.value.id}/execute`
+      : `/api/plans/${selectedPlan.value.id}/execute`;
+    const body = selectedPlan.value.type === "operation" ? { confirmText: "执行操作计划" } : undefined;
+    task.value = await apiPost<ExecutionTask>(path, body);
     await load();
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);

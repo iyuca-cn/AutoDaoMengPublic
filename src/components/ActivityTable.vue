@@ -15,12 +15,13 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-line">
-        <tr v-for="item in items" :key="item.activityId">
+        <tr v-for="item in items" :key="item.activityId" class="cursor-pointer hover:bg-mint/40" @click="$emit('open', item.activityId)">
           <td>
             <input
               class="h-4 w-4 accent-moss"
               type="checkbox"
               :checked="selectedIds.includes(item.activityId)"
+              @click.stop
               @change="$emit('toggle', item.activityId)"
             />
           </td>
@@ -74,6 +75,7 @@ defineProps<{
 
 defineEmits<{
   toggle: [activityId: string];
+  open: [activityId: string];
 }>();
 
 function creditedTotal(item: ActivityOverviewItem): number {
