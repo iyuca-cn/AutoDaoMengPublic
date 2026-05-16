@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ActivityBundle, BundleCandidate, DemandRecord } from "../../server/domain/models";
 import { bundleKey, Planner, planStudentAllocation } from "../../server/domain/planner";
 
-function makeBundle(activityId: string, valueCent: number, capacity = 10, creditId?: string): ActivityBundle {
+function makeBundle(activityId: string, valueCent: number, capacity = 10, creditId?: string, scoreId?: string): ActivityBundle {
   return {
     activityId,
     activityName: `活动${activityId}`,
@@ -12,7 +12,7 @@ function makeBundle(activityId: string, valueCent: number, capacity = 10, credit
     creditItems: [
       {
         creditId: creditId ?? `${activityId}-${valueCent}`,
-        scoreId: `${activityId}-score`,
+        scoreId: scoreId ?? `${activityId}-score`,
         creditType: "美育实践学分",
         unitcountCent: valueCent,
         remainingCapacity: capacity,
@@ -21,9 +21,9 @@ function makeBundle(activityId: string, valueCent: number, capacity = 10, credit
   };
 }
 
-function makeCandidate(activityId: string, valueCent: number, capacity = 10, creditId?: string): BundleCandidate {
+function makeCandidate(activityId: string, valueCent: number, capacity = 10, creditId?: string, scoreId?: string): BundleCandidate {
   return {
-    bundle: makeBundle(activityId, valueCent, capacity, creditId),
+    bundle: makeBundle(activityId, valueCent, capacity, creditId, scoreId),
     signUpId: `signup-${activityId}`,
     userId: `user-${activityId}`,
   };
@@ -46,6 +46,16 @@ describe("planner", () => {
   it("keeps same activity split credit rows distinct", () => {
     const allocation = planStudentAllocation({ ...demand, requestedValueCent: 20 }, [makeCandidate("A", 20, 10, "A-201"), makeCandidate("A", 30, 10, "A-202")], {});
     expect(allocation.assignments[0].bundle.creditItems[0].creditId).toBe("A-201");
+  });
+
+  it("tracks same activity credit items by score id when counting capacity", () => {
+    const first = makeCandidate("A", 50, 1, "credit-1", "score-1");
+    const second = makeCandidate("A", 50, 1, "credit-2", "score-2");
+    const result = new Planner().plan([
+      { demand: { ...demand, studentId: "20250001" }, candidates: [first] },
+      { demand: { ...demand, studentId: "20250002", studentName: "李四" }, candidates: [second] },
+    ]);
+    expect(result.allocations.map((allocation) => allocation.assignments[0]?.bundle.creditItems[0]?.scoreId)).toEqual(["score-1", "score-2"]);
   });
 
   it("prefers lower usage concentration", () => {

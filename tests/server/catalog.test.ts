@@ -54,6 +54,30 @@ describe("activity catalog", () => {
     expect(healthy?.hasSignCard).toBe(true);
     expect(healthy?.creditItems).toHaveLength(1);
   });
+
+  it("keeps credited counts separated by score id for each activity credit item", async () => {
+    const requestedScoreIds: string[] = [];
+    const client = createCatalogClient({
+      getCreditTypes: async () => [
+        creditRow({ creditId: "credit-1", scoreId: "score-1", scorename: "美育实践学分" }),
+        creditRow({ creditId: "credit-2", scoreId: "score-2", scorename: "思想成长学分" }),
+      ],
+      getCreditList: async (_kind, _activityId, scoreId) => {
+        requestedScoreIds.push(scoreId);
+        return scoreId === "score-1" ? [{ signUpId: "signup-1" }] : [{ signUpId: "signup-2" }, { signUpId: "signup-3" }];
+      },
+    });
+
+    const overview = await buildActivityOverview(client);
+
+    const item = overview.find((row) => row.activityId === "activity-with-card");
+    expect(item?.creditedCounts).toMatchObject({
+      "score-1": 1,
+      "score-2": 2,
+    });
+    expect(requestedScoreIds).toContain("score-1");
+    expect(requestedScoreIds).toContain("score-2");
+  });
 });
 
 function createCatalogClient(overrides: Partial<CatalogClient> = {}): CatalogClient {
@@ -70,7 +94,7 @@ function createCatalogClient(overrides: Partial<CatalogClient> = {}): CatalogCli
   };
 }
 
-function creditRow(): Record<string, string> {
+function creditRow(overrides: Partial<Record<string, string>> = {}): Record<string, string> {
   return {
     creditId: "credit-1",
     scoreId: "score-1",
@@ -78,5 +102,6 @@ function creditRow(): Record<string, string> {
     unitcount: "0.50",
     num: "10",
     providenum: "2",
+    ...overrides,
   };
 }

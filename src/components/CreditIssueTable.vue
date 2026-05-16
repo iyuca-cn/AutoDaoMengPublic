@@ -13,18 +13,18 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-line">
-        <tr v-for="item in creditItems" :key="item.scoreId">
+        <tr v-for="item in creditItems" :key="creditItemKey(item)">
           <td>
             <label class="inline-flex items-center gap-2">
               <input
                 class="h-4 w-4 accent-moss"
                 type="checkbox"
-                :checked="selectedScoreIds.includes(item.scoreId)"
-                @change="$emit('toggle-credit', item.scoreId)"
+                :checked="selectedCreditItemKeys.includes(creditItemKey(item))"
+                @change="$emit('toggle-credit', creditItemKey(item))"
               />
               <span class="font-medium">{{ item.creditType }}</span>
             </label>
-            <div class="text-xs text-slate-500">{{ item.scoreId }}</div>
+            <div class="text-xs text-slate-500">{{ item.scoreId || item.creditId }}</div>
           </td>
           <td>{{ formatCent(item.unitcountCent) }}</td>
           <td>{{ item.issuedCount }} / {{ item.totalCapacity }}，剩余 {{ item.remainingCapacity }}</td>
@@ -48,7 +48,7 @@ import { formatCent } from "../types";
 const props = defineProps<{
   creditItems: ActivityCreditItem[];
   creditListsByScoreId: Record<string, ActivityCreditLists>;
-  selectedScoreIds: string[];
+  selectedCreditItemKeys: string[];
 }>();
 
 defineEmits<{
@@ -62,5 +62,9 @@ function lists(scoreId: string): ActivityCreditLists {
     credited: [],
     notSent: [],
   };
+}
+
+function creditItemKey(item: ActivityCreditItem): string {
+  return [item.scoreId, item.creditId, item.creditType, item.unitcountCent].join(":");
 }
 </script>

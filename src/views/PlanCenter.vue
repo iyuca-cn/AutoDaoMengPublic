@@ -113,7 +113,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, toRaw } from "vue";
 import { Download, RefreshCw, Save } from "lucide-vue-next";
 import { apiGet, apiPatch, downloadUrl } from "../api";
 import OperationPlanTable from "../components/OperationPlanTable.vue";
@@ -165,12 +165,27 @@ async function load() {
 
 function select(plan: Plan) {
   selectedPlan.value = plan;
-  editableAllocations.value = structuredClone(plan.allocations);
+  editableAllocations.value = cloneEditable(plan.allocations);
 }
 
 function selectOperation(plan: OperationPlan) {
   selectedOperationPlan.value = plan;
-  editableOperationActions.value = structuredClone(plan.actions);
+  editableOperationActions.value = cloneEditable(plan.actions);
+}
+
+function cloneEditable<T>(value: T): T {
+  return structuredClone(toCloneable(value));
+}
+
+function toCloneable<T>(value: T): T {
+  const raw = toRaw(value);
+  if (Array.isArray(raw)) {
+    return raw.map((item) => toCloneable(item)) as T;
+  }
+  if (raw && typeof raw === "object") {
+    return Object.fromEntries(Object.entries(raw).map(([key, item]) => [key, toCloneable(item)])) as T;
+  }
+  return raw;
 }
 
 async function savePlan() {
@@ -181,7 +196,7 @@ async function savePlan() {
   error.value = "";
   try {
     selectedPlan.value = await apiPatch<Plan>(`/api/plans/${selectedPlan.value.id}`, {
-      allocations: editableAllocations.value,
+      allocations: cloneEditable(editableAllocations.value),
     });
     await load();
   } catch (err) {
@@ -199,7 +214,7 @@ async function saveOperationPlan() {
   error.value = "";
   try {
     selectedOperationPlan.value = await apiPatch<OperationPlan>(`/api/operation-plans/${selectedOperationPlan.value.id}`, {
-      actions: editableOperationActions.value,
+      actions: cloneEditable(editableOperationActions.value),
     });
     await load();
   } catch (err) {

@@ -47,8 +47,8 @@
           </td>
           <td>
             <div class="flex flex-wrap gap-1">
-              <span v-for="credit in item.creditItems" :key="credit.creditId" class="rounded border border-line bg-paper px-2 py-1 text-xs">
-                {{ credit.creditType }} {{ formatCent(credit.unitcountCent) }}
+              <span v-for="credit in item.creditItems" :key="credit.scoreId || credit.creditId" class="rounded border border-line bg-paper px-2 py-1 text-xs">
+                {{ credit.creditType }} {{ formatCent(credit.unitcountCent) }} · 已发 {{ creditedCount(item, credit.scoreId) }} · 剩余 {{ credit.remainingCapacity }}
               </span>
             </div>
           </td>
@@ -83,6 +83,10 @@ defineEmits<{
 
 function creditedTotal(item: ActivityOverviewItem): number {
   return Object.values(item.creditedCounts).reduce((sum, value) => sum + value, 0);
+}
+
+function creditedCount(item: ActivityOverviewItem, scoreId: string): number {
+  return item.creditedCounts[scoreId] ?? 0;
 }
 
 function capacityTotal(item: ActivityOverviewItem): number {

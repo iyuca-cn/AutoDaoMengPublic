@@ -89,7 +89,7 @@
     <CreditIssueTable
       :credit-items="detail.creditItems"
       :credit-lists-by-score-id="detail.creditListsByScoreId"
-      :selected-score-ids="selectedScoreIds"
+      :selected-credit-item-keys="selectedCreditItemKeys"
       @toggle-credit="toggleCredit"
     />
   </section>
@@ -114,7 +114,7 @@ defineEmits<{
 }>();
 
 const selectedSignUpIds = ref<string[]>([]);
-const selectedScoreIds = ref<string[]>([]);
+const selectedCreditItemKeys = ref<string[]>([]);
 const filters = reactive({
   name: "",
   studentId: "",
@@ -158,8 +158,8 @@ const selectedMembers = computed(() => {
 });
 
 const selectedCreditItems = computed<ActivityCreditItem[]>(() => {
-  const ids = new Set(selectedScoreIds.value);
-  return props.detail.creditItems.filter((item) => ids.has(item.scoreId));
+  const keys = new Set(selectedCreditItemKeys.value);
+  return props.detail.creditItems.filter((item) => keys.has(creditItemKey(item)));
 });
 
 const stats = computed(() => [
@@ -175,10 +175,10 @@ function toggleMember(signUpId: string) {
     : [...selectedSignUpIds.value, signUpId];
 }
 
-function toggleCredit(scoreId: string) {
-  selectedScoreIds.value = selectedScoreIds.value.includes(scoreId)
-    ? selectedScoreIds.value.filter((id) => id !== scoreId)
-    : [...selectedScoreIds.value, scoreId];
+function toggleCredit(key: string) {
+  selectedCreditItemKeys.value = selectedCreditItemKeys.value.includes(key)
+    ? selectedCreditItemKeys.value.filter((item) => item !== key)
+    : [...selectedCreditItemKeys.value, key];
 }
 
 function selectAll() {
@@ -186,5 +186,9 @@ function selectAll() {
     ...selectedSignUpIds.value,
     ...filteredMembers.value.map((person) => person.signUpId).filter((id): id is string => Boolean(id)),
   ])];
+}
+
+function creditItemKey(item: ActivityCreditItem): string {
+  return [item.scoreId, item.creditId, item.creditType, item.unitcountCent].join(":");
 }
 </script>

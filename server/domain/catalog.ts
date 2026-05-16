@@ -91,7 +91,7 @@ async function buildActivityOverviewItem(
     ]);
     const creditedEntries = await Promise.all(
       creditItems.map(async (item) => [
-        item.creditId,
+        item.scoreId,
         await listCount(() => client.getCreditList("credited", normalizedActivityId, item.scoreId)),
       ] as const),
     );

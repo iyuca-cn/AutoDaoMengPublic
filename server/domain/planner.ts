@@ -1,8 +1,8 @@
 import type { ActivityBundle, BundleCandidate, DemandAllocation, DemandRecord, PlannableDemand, PlanningResult } from "./models";
 
 export function bundleKey(bundle: ActivityBundle): string {
-  const creditIds = bundle.creditItems.map((item) => item.creditId).sort().join(",");
-  return `${bundle.activityId}:${bundle.creditType}:${creditIds}`;
+  const creditItemKeys = bundle.creditItems.map((item) => `${item.scoreId}:${item.creditId}`).sort().join(",");
+  return `${bundle.activityId}:${bundle.creditType}:${creditItemKeys}`;
 }
 
 function candidateBalanceKey(assignments: BundleCandidate[], usageCounts: Record<string, number>): [number, number, number, string] {

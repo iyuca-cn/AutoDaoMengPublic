@@ -1,8 +1,11 @@
 <template>
   <div class="grid gap-3">
-    <div v-for="group in groups" :key="group.activityId" class="rounded border border-line bg-white p-3">
+    <div v-for="group in groups" :key="group.key" class="rounded border border-line bg-white p-3">
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <h4 class="font-semibold">{{ group.activityName }}</h4>
+        <div>
+          <h4 class="font-semibold">{{ group.activityName }}</h4>
+          <div class="mt-1 text-xs text-slate-500">{{ group.creditType }} {{ formatCent(group.valueCent) }} · {{ group.scoreId }}</div>
+        </div>
         <span class="text-sm text-slate-500">{{ group.count }} 项</span>
       </div>
       <div class="mt-2 flex flex-wrap gap-2">
@@ -20,20 +23,26 @@ import { formatCent } from "../types";
 const props = defineProps<{ plan: Plan }>();
 
 const groups = computed(() => {
-  const byActivity = new Map<string, { activityId: string; activityName: string; count: number; items: string[] }>();
+  const byCreditItem = new Map<string, { key: string; activityName: string; scoreId: string; creditType: string; valueCent: number; count: number; items: string[] }>();
   for (const allocation of props.plan.allocations) {
     for (const assignment of allocation.assignments) {
-      const group = byActivity.get(assignment.bundle.activityId) ?? {
-        activityId: assignment.bundle.activityId,
+      const creditItem = assignment.bundle.creditItems[0];
+      const scoreId = creditItem?.scoreId || "";
+      const key = `${assignment.bundle.activityId}:${assignment.bundle.creditType}:${scoreId}`;
+      const group = byCreditItem.get(key) ?? {
+        key,
         activityName: assignment.bundle.activityName,
+        scoreId,
+        creditType: assignment.bundle.creditType,
+        valueCent: assignment.bundle.bundleValueCent,
         count: 0,
         items: [],
       };
       group.count += 1;
-      group.items.push(`${allocation.demand.studentName} ${assignment.bundle.creditType} ${formatCent(assignment.bundle.bundleValueCent)}`);
-      byActivity.set(assignment.bundle.activityId, group);
+      group.items.push(`${allocation.demand.studentName} ${allocation.demand.studentId}`);
+      byCreditItem.set(key, group);
     }
   }
-  return [...byActivity.values()];
+  return [...byCreditItem.values()];
 });
 </script>

@@ -45,6 +45,36 @@ describe("operation plans", () => {
     expect(plan.summary.expectedIssueCount).toBe(1);
   });
 
+  it("keeps selected credit items independent when an activity has multiple items", () => {
+    const otherCreditItem: ActivityCreditItem = {
+      ...creditItem,
+      creditId: "credit-2",
+      scoreId: "score-2",
+      creditType: "劳动教育学分",
+    };
+    const plan = createOperationPlan({
+      kind: "issueCredit",
+      activityId: "activity-1",
+      activityName: "活动一",
+      members: [member],
+      creditItems: [otherCreditItem],
+    });
+
+    expect(plan.actions[0].creditItems).toHaveLength(1);
+    expect(plan.actions[0].creditItems[0]).toMatchObject({ scoreId: "score-2", creditType: "劳动教育学分" });
+    expect(plan.actions[0].creditItems.some((item) => item.scoreId === "score-1")).toBe(false);
+  });
+
+  it("rejects issue credit plans with missing score id", () => {
+    expect(() => createOperationPlan({
+      kind: "issueCredit",
+      activityId: "activity-1",
+      activityName: "活动一",
+      members: [member],
+      creditItems: [{ ...creditItem, scoreId: "" }],
+    })).toThrow("缺少 scoreId");
+  });
+
   it("rejects missing signup id", () => {
     expect(() => createOperationPlan({
       kind: "resign",

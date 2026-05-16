@@ -111,6 +111,11 @@ function normalizeCreditItems(kind: OperationKind, items: ActivityCreditItem[], 
   if (items.length === 0) {
     throw new Error("发放类操作必须选择学分项");
   }
+  for (const item of items) {
+    if (!item.scoreId) {
+      throw new Error(`${item.creditType} 缺少 scoreId，不能生成发放计划`);
+    }
+  }
   return uniqueCreditItems(items).map((item) => creditItemToOperationItem(item, activityId, activityName));
 }
 
@@ -126,7 +131,11 @@ function uniqueMembers(members: ActivityPersonRow[]): ActivityPersonRow[] {
 }
 
 function uniqueCreditItems(items: ActivityCreditItem[]): ActivityCreditItem[] {
-  return [...new Map(items.map((item) => [item.scoreId || item.creditId, item])).values()];
+  return [...new Map(items.map((item) => [creditItemKey(item), item])).values()];
+}
+
+function creditItemKey(item: ActivityCreditItem): string {
+  return [item.scoreId, item.creditId, item.creditType, item.unitcountCent].join(":");
 }
 
 function normalizePatchedAction(action: OperationAction): OperationAction {
