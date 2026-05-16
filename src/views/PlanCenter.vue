@@ -102,7 +102,7 @@
               <span class="label">计划标题</span>
               <input class="field" v-model.trim="editableOperationName" :disabled="saving || !canEditOperation" />
             </label>
-            <p class="mt-1 text-sm text-slate-600">{{ selectedOperationPlan.activityName }} · {{ statusLabel(selectedOperationPlan.status) }} · {{ selectedOperationPlan.createdAt }}</p>
+            <p class="mt-1 text-sm text-slate-600">{{ operationActivityLabel(selectedOperationPlan) }} · {{ statusLabel(selectedOperationPlan.status) }} · {{ selectedOperationPlan.createdAt }}</p>
           </div>
           <div class="flex flex-wrap gap-2">
             <button class="danger-button" type="button" :disabled="saving || !canDeleteOperation" @click="deleteOperationPlan">
@@ -241,6 +241,11 @@ function statusLabel(status: Plan["status"] | OperationPlan["status"]): string {
     cancelled: "已取消",
   };
   return labels[status];
+}
+
+function operationActivityLabel(plan: OperationPlan): string {
+  const names = plan.activityNames?.length ? plan.activityNames : [plan.activityName];
+  return names.length === 1 ? names[0] : `${names.length} 个活动`;
 }
 
 function cloneEditable<T>(value: T): T {

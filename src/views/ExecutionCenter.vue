@@ -32,8 +32,11 @@
           </button>
           <button class="danger-button justify-center" type="button" :disabled="!canExecute" @click="execute">
             <PlayCircle class="h-4 w-4" />
-            确认执行
+            {{ selectedPlan?.status === "failed" ? "重新执行" : "确认执行" }}
           </button>
+        </div>
+        <div v-if="streamMessages.length > 0" class="mt-3 grid gap-1 rounded border border-line bg-paper p-2 text-xs text-slate-600">
+          <div v-for="(item, index) in streamMessages" :key="`${index}-${item}`">{{ item }}</div>
         </div>
       </aside>
 
@@ -58,11 +61,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { Download, PlayCircle, RefreshCw, ShieldCheck } from "lucide-vue-next";
-import { apiGet, apiPost, downloadUrl } from "../api";
+import { apiGet, apiStream, downloadUrl } from "../api";
 import ExecutionPrecheck from "../components/ExecutionPrecheck.vue";
 import ExecutionProgress from "../components/ExecutionProgress.vue";
 import ExecutionResults from "../components/ExecutionResults.vue";
-import type { ExecutionTask, OperationPlan, Plan } from "../types";
+import type { ApiStreamEvent, ExecutionTask, OperationPlan, Plan } from "../types";
 
 const plans = ref<Plan[]>([]);
 const operationPlans = ref<OperationPlan[]>([]);
@@ -72,15 +75,17 @@ const precheckedPlanKey = ref("");
 const task = ref<ExecutionTask | null>(null);
 const running = ref(false);
 const error = ref("");
+const streamMessages = ref<string[]>([]);
 
 type ExecutablePlanOption = { key: string; id: string; type: "credit" | "operation"; label: string; status: string };
+type PrecheckReport = { executable: boolean; actionCount: number; issues: Array<{ level: string; code: string; message: string }> };
 
 const executablePlans = computed<ExecutablePlanOption[]>(() => [
   ...plans.value
-    .filter((plan) => ["draft", "ready"].includes(plan.status))
+    .filter((plan) => ["draft", "ready", "failed"].includes(plan.status))
     .map((plan) => ({ key: `credit:${plan.id}`, id: plan.id, type: "credit" as const, label: `Excel · ${plan.name}`, status: plan.status })),
   ...operationPlans.value
-    .filter((plan) => ["draft", "ready"].includes(plan.status))
+    .filter((plan) => ["draft", "ready", "failed"].includes(plan.status))
     .map((plan) => ({ key: `operation:${plan.id}`, id: plan.id, type: "operation" as const, label: `操作 · ${plan.name}`, status: plan.status })),
 ]);
 const selectedPlan = computed(() => executablePlans.value.find((plan) => plan.key === selectedPlanId.value) ?? null);
@@ -97,6 +102,7 @@ watch(selectedPlanId, () => {
   precheck.value = null;
   precheckedPlanKey.value = "";
   task.value = null;
+  streamMessages.value = [];
 });
 
 async function load() {
@@ -119,11 +125,15 @@ async function runPrecheck() {
   }
   running.value = true;
   error.value = "";
+  streamMessages.value = [];
   try {
     const path = selectedPlan.value.type === "operation"
-      ? `/api/operation-plans/${selectedPlan.value.id}/precheck`
-      : `/api/plans/${selectedPlan.value.id}/precheck`;
-    precheck.value = await apiPost(path);
+      ? `/api/operation-plans/${selectedPlan.value.id}/precheck/stream`
+      : `/api/plans/${selectedPlan.value.id}/precheck/stream`;
+    precheck.value = await apiStream<PrecheckReport>(path, {
+      method: "POST",
+      onEvent: appendStreamMessage,
+    });
     precheckedPlanKey.value = selectedPlan.value.key;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
@@ -141,11 +151,20 @@ async function execute() {
   }
   running.value = true;
   error.value = "";
+  streamMessages.value = [];
   try {
     const path = selectedPlan.value.type === "operation"
-      ? `/api/operation-plans/${selectedPlan.value.id}/execute`
-      : `/api/plans/${selectedPlan.value.id}/execute`;
-    task.value = await apiPost<ExecutionTask>(path);
+      ? `/api/operation-plans/${selectedPlan.value.id}/execute/stream`
+      : `/api/plans/${selectedPlan.value.id}/execute/stream`;
+    task.value = await apiStream<ExecutionTask>(path, {
+      method: "POST",
+      onEvent: (event) => {
+        appendStreamMessage(event);
+        if (event.type === "task" && isTask(event.data)) {
+          task.value = event.data;
+        }
+      },
+    });
     await load();
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
@@ -155,10 +174,22 @@ async function execute() {
 }
 
 function confirmExecution(plan: ExecutablePlanOption): boolean {
-  const firstConfirmed = window.confirm(`确认执行「${plan.label}」？`);
+  const action = plan.status === "failed" ? "重新执行" : "执行";
+  const firstConfirmed = window.confirm(`确认${action}「${plan.label}」？`);
   if (!firstConfirmed) {
     return false;
   }
   return window.confirm("再次确认：执行会提交线上写操作，是否继续？");
+}
+
+function appendStreamMessage(event: ApiStreamEvent<unknown>) {
+  if (!event.message) {
+    return;
+  }
+  streamMessages.value = [...streamMessages.value.slice(-7), event.message];
+}
+
+function isTask(value: unknown): value is ExecutionTask {
+  return typeof value === "object" && value !== null && "id" in value && "events" in value;
 }
 </script>

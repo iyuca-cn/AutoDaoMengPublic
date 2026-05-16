@@ -12,6 +12,7 @@
         <thead>
           <tr>
             <th>启用</th>
+            <th>活动</th>
             <th>人员</th>
             <th>操作</th>
             <th>学分项</th>
@@ -30,6 +31,10 @@
               />
             </td>
             <td>
+              <div class="font-medium">{{ action.activityName || plan.activityName }}</div>
+              <div class="text-xs text-slate-500">{{ action.activityId || plan.activityId }}</div>
+            </td>
+            <td>
               <div class="font-medium">{{ action.studentName }}</div>
               <div class="text-xs text-slate-500">{{ action.studentId || "-" }} · {{ action.signUpId }}</div>
             </td>
@@ -45,7 +50,7 @@
             <td>{{ action.status }}</td>
           </tr>
           <tr v-if="modelValue.length === 0">
-            <td colspan="5" class="py-8 text-center text-slate-500">暂无动作</td>
+            <td colspan="6" class="py-8 text-center text-slate-500">暂无动作</td>
           </tr>
         </tbody>
       </table>

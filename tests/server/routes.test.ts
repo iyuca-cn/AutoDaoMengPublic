@@ -87,6 +87,49 @@ describe("routes", () => {
     expect(executedBody.data).toMatchObject({ status: "completed", targetType: "operationPlan" });
   });
 
+  it("streams operation plan execution task updates", async () => {
+    const context = createTestContext();
+    await routeRequest(jsonRequest("http://local/api/session/login", {
+      account: "alice",
+      pwd: "secret",
+      persist: false,
+    }), context);
+    const created = await routeRequest(jsonRequest("http://local/api/operation-plans", {
+      kind: "resign",
+      activityId: "activity-1",
+      activityName: "活动一",
+      members: [{ studentName: "张三", signUpId: "signup-1", userId: "user-1" }],
+    }), context);
+    const body = await created.json() as { data: { id: string } };
+    await routeRequest(new Request(`http://local/api/operation-plans/${body.data.id}/precheck`, { method: "POST" }), context);
+
+    const streamed = await routeRequest(new Request(`http://local/api/operation-plans/${body.data.id}/execute/stream`, { method: "POST" }), context);
+    const events = parseNdjson(await streamed.text());
+
+    expect(streamed.status).toBe(200);
+    expect(events.some((event) => event.type === "task")).toBe(true);
+    expect(events.at(-1)).toMatchObject({ type: "completed" });
+  });
+
+  it("streams batch activity detail errors without stopping the whole response", async () => {
+    const context = createTestContext();
+    await routeRequest(jsonRequest("http://local/api/session/login", {
+      account: "alice",
+      pwd: "secret",
+      persist: false,
+    }), context);
+
+    const response = await routeRequest(jsonRequest("http://local/api/activities/details/stream", {
+      activityIds: ["activity-1", "missing-activity"],
+    }), context);
+    const events = parseNdjson(await response.text());
+
+    expect(response.status).toBe(200);
+    expect(events.some((event) => event.type === "data" && event.data?.activityId === "activity-1")).toBe(true);
+    expect(events.some((event) => event.type === "error" && event.code === "ACTIVITY_DETAIL_FAILED")).toBe(true);
+    expect(events.at(-1)?.type).toBe("completed");
+  });
+
   it("does not restore the current session again when prechecking after login", async () => {
     const context = createTestContext();
     await routeRequest(jsonRequest("http://local/api/session/login", {
@@ -156,6 +199,8 @@ function createTestContext(): RouteContext {
     getManagedActivities: async () => ({ "activity-1": { activityId: "activity-1", name: "活动一" } }),
     getSignCard: async () => "card-1",
     getSignList: async () => [{ signUpId: "signup-1", userId: "user-1", studentName: "张三" }],
+    getCreditTypes: async () => [],
+    exportMembers: async () => new ArrayBuffer(0),
     getCreditList: async () => [],
     resign: async () => true,
     sendCredit: async () => true,
@@ -169,6 +214,14 @@ function createTestContext(): RouteContext {
     } as unknown as LocalApiProcessManager,
     sessionManager: new SessionManager(store, localApiClient),
   };
+}
+
+function parseNdjson(text: string): Array<{ type: string; code?: string; data?: { activityId?: string } }> {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as { type: string; code?: string; data?: { activityId?: string } });
 }
 
 function jsonRequest(url: string, body: unknown): Request {

@@ -15,8 +15,8 @@ export class OperationTaskRunner {
     return report;
   }
 
-  async run(plan: OperationPlan): Promise<ExecutionTask> {
-    if (!["draft", "ready"].includes(plan.status)) {
+  async run(plan: OperationPlan, onTask?: (task: ExecutionTask) => void): Promise<ExecutionTask> {
+    if (!["draft", "ready", "failed"].includes(plan.status)) {
       throw new Error("只有草稿或已预检操作计划可以执行");
     }
     const now = new Date().toISOString();
@@ -31,13 +31,14 @@ export class OperationTaskRunner {
       events: [{ time: now, level: "info", message: "操作计划任务开始执行" }],
     };
     await this.store.create("tasks", task);
+    onTask?.(task);
     await this.store.update("operation-plans", plan.id, (storedPlan) => ({
       ...storedPlan,
       status: "running",
       updatedAt: new Date().toISOString(),
       auditLogs: [...storedPlan.auditLogs, createAuditLog("operation-plan.execution.started", { taskId: task.id }, "user")],
     }));
-    const events = taskEventWriter(task, this.store);
+    const events = taskEventWriter(task, this.store, onTask);
     try {
       const result = await executeOperationPlan(this.client, plan, events.push);
       await events.flush();
@@ -48,6 +49,7 @@ export class OperationTaskRunner {
         result,
         events: [...storedTask.events, { time: new Date().toISOString(), level: "info", message: "操作计划任务执行完成" }],
       }));
+      onTask?.(completed);
       await this.store.update("operation-plans", plan.id, (storedPlan) => ({
         ...storedPlan,
         status: result.failedCount > 0 ? "failed" : "completed",
@@ -63,6 +65,7 @@ export class OperationTaskRunner {
         updatedAt: new Date().toISOString(),
         events: [...storedTask.events, { time: new Date().toISOString(), level: "error", message: error instanceof Error ? error.message : String(error) }],
       }));
+      onTask?.(failed);
       await this.store.update("operation-plans", plan.id, (storedPlan) => ({
         ...storedPlan,
         status: "failed",
@@ -74,7 +77,7 @@ export class OperationTaskRunner {
   }
 }
 
-function taskEventWriter(task: ExecutionTask, store: JsonStore): { push: (message: string) => void; flush: () => Promise<void> } {
+function taskEventWriter(task: ExecutionTask, store: JsonStore, onTask?: (task: ExecutionTask) => void): { push: (message: string) => void; flush: () => Promise<void> } {
   let pending = Promise.resolve();
   return {
     push(message: string) {
@@ -82,7 +85,9 @@ function taskEventWriter(task: ExecutionTask, store: JsonStore): { push: (messag
         ...storedTask,
         updatedAt: new Date().toISOString(),
         events: [...storedTask.events, { time: new Date().toISOString(), level: "info", message }],
-      }))).then(() => undefined);
+      }))).then((updatedTask) => {
+        onTask?.(updatedTask);
+      });
     },
     flush() {
       return pending;

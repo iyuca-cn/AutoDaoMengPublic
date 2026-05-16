@@ -13,6 +13,14 @@ import {
 export interface CreateOperationPlanInput {
   name?: string;
   kind: OperationKind;
+  activityId?: string;
+  activityName?: string;
+  members?: ActivityPersonRow[];
+  creditItems?: ActivityCreditItem[];
+  activitySelections?: OperationActivitySelection[];
+}
+
+export interface OperationActivitySelection {
   activityId: string;
   activityName: string;
   members: ActivityPersonRow[];
@@ -26,34 +34,38 @@ export interface PatchOperationPlanInput {
 }
 
 export function createOperationPlan(input: CreateOperationPlanInput): OperationPlan {
-  if (!input.activityId) {
-    throw new Error("活动 ID 不能为空");
-  }
-  if (!input.activityName) {
-    throw new Error("活动名称不能为空");
-  }
   if (!["resign", "issueCredit", "resignThenIssueCredit"].includes(input.kind)) {
     throw new Error("操作类型不支持");
   }
-  const members = uniqueMembers(input.members ?? []);
-  if (members.length === 0) {
+  const selections = normalizeSelections(input);
+  const actions = selections.flatMap((selection) => {
+    const members = uniqueMembers(selection.members ?? []);
+    if (members.length === 0) {
+      return [];
+    }
+    const operationCreditItems = normalizeCreditItems(input.kind, selection.creditItems ?? [], selection.activityId, selection.activityName);
+    return members.map((member) => actionFromMember(input.kind, member, operationCreditItems, selection.activityId, selection.activityName));
+  });
+  if (actions.length === 0) {
     throw new Error("请选择要生成计划的人员");
   }
-  const operationCreditItems = normalizeCreditItems(input.kind, input.creditItems ?? [], input.activityId, input.activityName);
-  const actions = members.map((member) => actionFromMember(input.kind, member, operationCreditItems));
+  const activityIds = uniqueValues(actions.map((action) => action.activityId));
+  const activityNames = uniqueValues(actions.map((action) => action.activityName));
   const now = new Date().toISOString();
   const plan: OperationPlan = {
     id: crypto.randomUUID(),
-    name: input.name?.trim() || defaultPlanName(input.kind, input.activityName),
+    name: input.name?.trim() || defaultPlanName(input.kind, activityNames),
     kind: input.kind,
-    activityId: input.activityId,
-    activityName: input.activityName,
+    activityId: activityIds[0],
+    activityName: activityNames[0],
+    activityIds,
+    activityNames,
     createdAt: now,
     updatedAt: now,
     status: "draft",
     actions,
     summary: buildOperationPlanSummary(actions),
-    auditLogs: [createAuditLog("operation-plan.created", { kind: input.kind, activityId: input.activityId, actionCount: actions.length }, "user")],
+    auditLogs: [createAuditLog("operation-plan.created", { kind: input.kind, activityIds, actionCount: actions.length }, "user")],
   };
   return plan;
 }
@@ -63,10 +75,16 @@ export function patchOperationPlan(plan: OperationPlan, input: PatchOperationPla
     throw new Error("已执行或执行中的操作计划不能直接修改，请复制为新计划");
   }
   const name = input.name?.trim();
-  const actions = input.actions ? input.actions.map(normalizePatchedAction) : plan.actions;
+  const actions = input.actions ? input.actions.map((action) => normalizePatchedAction(action, plan)) : plan.actions.map((action) => normalizePatchedAction(action, plan));
+  const activityIds = uniqueValues(actions.map((action) => action.activityId));
+  const activityNames = uniqueValues(actions.map((action) => action.activityName));
   return {
     ...plan,
     name: name || plan.name,
+    activityId: activityIds[0] ?? plan.activityId,
+    activityName: activityNames[0] ?? plan.activityName,
+    activityIds,
+    activityNames,
     status: input.status ?? (plan.status === "draft" ? "ready" : plan.status),
     actions,
     summary: buildOperationPlanSummary(actions),
@@ -81,20 +99,28 @@ export function buildOperationPlanSummary(actions: OperationAction[]): Operation
   return {
     actionCount: actions.length,
     enabledCount: enabled.length,
-    targetMemberCount: new Set(enabled.map((action) => action.signUpId)).size,
+    targetMemberCount: new Set(enabled.map((action) => `${action.activityId}:${action.signUpId}`)).size,
     targetCreditItemCount: targetCreditKeys.size,
     expectedResignCount: enabled.filter((action) => action.kind === "resign" || action.kind === "resignThenIssueCredit").length,
     expectedIssueCount: enabled.reduce((sum, action) => sum + (action.kind === "resign" ? 0 : action.creditItems.length), 0),
   };
 }
 
-function actionFromMember(kind: OperationKind, member: ActivityPersonRow, creditItems: OperationCreditItem[]): OperationAction {
+function actionFromMember(
+  kind: OperationKind,
+  member: ActivityPersonRow,
+  creditItems: OperationCreditItem[],
+  activityId: string,
+  activityName: string,
+): OperationAction {
   if (!member.signUpId) {
     throw new Error(`${member.studentName || member.studentId || "所选人员"} 缺少 signUpId，不能生成写操作计划`);
   }
   return {
     id: crypto.randomUUID(),
     kind,
+    activityId,
+    activityName,
     studentId: member.studentId,
     studentName: member.studentName || "未知姓名",
     signUpId: member.signUpId,
@@ -102,6 +128,35 @@ function actionFromMember(kind: OperationKind, member: ActivityPersonRow, credit
     creditItems,
     enabled: true,
     status: "planned",
+  };
+}
+
+function normalizeSelections(input: CreateOperationPlanInput): OperationActivitySelection[] {
+  if (input.activitySelections?.length) {
+    return input.activitySelections.map((selection) => normalizeSelection(selection));
+  }
+  return [normalizeSelection({
+    activityId: input.activityId ?? "",
+    activityName: input.activityName ?? "",
+    members: input.members ?? [],
+    creditItems: input.creditItems ?? [],
+  })];
+}
+
+function normalizeSelection(selection: OperationActivitySelection): OperationActivitySelection {
+  const activityId = selection.activityId?.trim();
+  const activityName = selection.activityName?.trim();
+  if (!activityId) {
+    throw new Error("活动 ID 不能为空");
+  }
+  if (!activityName) {
+    throw new Error("活动名称不能为空");
+  }
+  return {
+    activityId,
+    activityName,
+    members: selection.members ?? [],
+    creditItems: selection.creditItems ?? [],
   };
 }
 
@@ -164,19 +219,31 @@ function creditItemKey(item: ActivityCreditItem): string {
   return [item.scoreId, item.creditId, item.creditType, item.unitcountCent].join(":");
 }
 
-function normalizePatchedAction(action: OperationAction): OperationAction {
+function normalizePatchedAction(action: OperationAction, plan: OperationPlan): OperationAction {
   return {
     ...action,
+    activityId: action.activityId || plan.activityId,
+    activityName: action.activityName || plan.activityName,
+    creditItems: action.creditItems.map((item) => ({
+      ...item,
+      activityId: item.activityId || action.activityId || plan.activityId,
+      activityName: item.activityName || action.activityName || plan.activityName,
+    })),
     enabled: Boolean(action.enabled),
     status: action.enabled ? action.status : "disabled",
   };
 }
 
-function defaultPlanName(kind: OperationKind, activityName: string): string {
+function defaultPlanName(kind: OperationKind, activityNames: string[]): string {
   const label = {
     resign: "补签计划",
     issueCredit: "发放计划",
     resignThenIssueCredit: "补签后发放计划",
   } satisfies Record<OperationKind, string>;
-  return `${activityName} ${label[kind]}`;
+  const prefix = activityNames.length === 1 ? activityNames[0] : `${activityNames.length} 个活动`;
+  return `${prefix} ${label[kind]}`;
+}
+
+function uniqueValues(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }

@@ -177,6 +177,13 @@ export interface ExecutionTask {
   };
 }
 
+export interface ApiStreamEvent<T = unknown> {
+  type: "started" | "progress" | "data" | "task" | "completed" | "error";
+  message?: string;
+  data?: T;
+  code?: string;
+}
+
 export interface OperationCreditItem extends ActivityCreditItem {
   activityId: string;
   activityName: string;
@@ -185,6 +192,8 @@ export interface OperationCreditItem extends ActivityCreditItem {
 export interface OperationAction {
   id: string;
   kind: OperationKind;
+  activityId: string;
+  activityName: string;
   studentId?: string;
   studentName: string;
   signUpId: string;
@@ -229,6 +238,8 @@ export interface OperationPlan {
   kind: OperationKind;
   activityId: string;
   activityName: string;
+  activityIds?: string[];
+  activityNames?: string[];
   createdAt: string;
   updatedAt: string;
   status: OperationPlanStatus;

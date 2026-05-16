@@ -1,6 +1,6 @@
 import { createOperationPlan, patchOperationPlan, type CreateOperationPlanInput, type PatchOperationPlanInput } from "../domain/operationPlans";
 import { OperationTaskRunner } from "../domain/operationTaskRunner";
-import { HttpError, jsonOk, pathParts, readJson } from "../http";
+import { HttpError, jsonOk, ndjsonStream, pathParts, readJson } from "../http";
 import { ensureLocalApiRunning, type RouteContext } from "./context";
 
 export async function handleOperationPlanRoutes(request: Request, context: RouteContext): Promise<Response | null> {
@@ -36,11 +36,34 @@ export async function handleOperationPlanRoutes(request: Request, context: Route
       await context.store.delete("operation-plans", id);
       return jsonOk({ deleted: true });
     }
+    if (request.method === "POST" && parts[3] === "precheck" && parts[4] === "stream" && parts.length === 5) {
+      await ensureLocalApiRunning(context);
+      await context.sessionManager.requireAuthenticated();
+      return ndjsonStream(async (send) => {
+        send({ type: "started", message: "开始运行操作计划预检" });
+        const runner = new OperationTaskRunner(context.store, context.localApiClient);
+        const report = await runner.precheck(plan);
+        send({ type: "data", message: "操作计划预检完成", data: report });
+        send({ type: "completed", message: "操作计划预检完成", data: report });
+      });
+    }
     if (request.method === "POST" && parts[3] === "precheck" && parts.length === 4) {
       await ensureLocalApiRunning(context);
       await context.sessionManager.requireAuthenticated();
       const runner = new OperationTaskRunner(context.store, context.localApiClient);
       return jsonOk(await runner.precheck(plan));
+    }
+    if (request.method === "POST" && parts[3] === "execute" && parts[4] === "stream" && parts.length === 5) {
+      await ensureLocalApiRunning(context);
+      await context.sessionManager.requireAuthenticated();
+      return ndjsonStream(async (send) => {
+        send({ type: "started", message: plan.status === "failed" ? "开始重新执行操作计划" : "开始执行操作计划" });
+        const runner = new OperationTaskRunner(context.store, context.localApiClient);
+        const task = await runner.run(plan, (snapshot) => {
+          send({ type: "task", message: snapshot.events.at(-1)?.message ?? "任务状态更新", data: snapshot });
+        });
+        send({ type: "completed", message: "操作计划执行结束", data: task });
+      });
     }
     if (request.method === "POST" && parts[3] === "execute" && parts.length === 4) {
       await ensureLocalApiRunning(context);

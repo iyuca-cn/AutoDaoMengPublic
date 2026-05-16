@@ -41,8 +41,36 @@ describe("operation plans", () => {
       members: [member],
       creditItems: [creditItem],
     });
+    expect(plan.activityIds).toEqual(["activity-1"]);
+    expect(plan.actions[0]).toMatchObject({ activityId: "activity-1", activityName: "活动一" });
     expect(plan.actions[0].creditItems[0]).toMatchObject({ scoreId: "score-1", activityId: "activity-1" });
     expect(plan.summary.expectedIssueCount).toBe(1);
+  });
+
+  it("creates one operation plan across multiple activities", () => {
+    const plan = createOperationPlan({
+      kind: "issueCredit",
+      activitySelections: [
+        {
+          activityId: "activity-1",
+          activityName: "活动一",
+          members: [member],
+          creditItems: [creditItem],
+        },
+        {
+          activityId: "activity-2",
+          activityName: "活动二",
+          members: [{ ...member, signUpId: "signup-2", userId: "user-2" }],
+          creditItems: [{ ...creditItem, creditId: "credit-2", scoreId: "score-2" }],
+        },
+      ],
+    });
+
+    expect(plan.name).toBe("2 个活动 发放计划");
+    expect(plan.activityIds).toEqual(["activity-1", "activity-2"]);
+    expect(plan.actions.map((action) => action.activityId)).toEqual(["activity-1", "activity-2"]);
+    expect(plan.summary.targetMemberCount).toBe(2);
+    expect(plan.summary.expectedIssueCount).toBe(2);
   });
 
   it("keeps selected credit items independent when an activity has multiple items", () => {

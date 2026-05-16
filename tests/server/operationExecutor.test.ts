@@ -19,7 +19,7 @@ describe("operation executor", () => {
     const calls: string[] = [];
     const client = fakeClient({ calls });
     const result = await executeOperationPlan(client, plan("resignThenIssueCredit"));
-    expect(calls).toEqual(["credited:credit-1", "resign:signup-1", "credited:credit-1", "send:credit-1:user-1"]);
+    expect(calls.indexOf("resign:activity-1:signup-1")).toBeLessThan(calls.indexOf("send:activity-1:credit-1:user-1"));
     expect(result.resignSuccessCount).toBe(1);
     expect(result.issueSuccessCount).toBe(1);
   });
@@ -29,8 +29,46 @@ describe("operation executor", () => {
     const client = fakeClient({ calls });
     await executeOperationPlan(client, plan("issueCredit"));
 
-    expect(calls).toEqual(["credited:credit-1", "credited:credit-1", "send:credit-1:user-1"]);
+    expect(calls).toContain("credited:activity-1:credit-1");
+    expect(calls).toContain("send:activity-1:credit-1:user-1");
     expect(calls.some((call) => call.includes("score-1"))).toBe(false);
+  });
+
+  it("prechecks and executes each action with its own activity id", async () => {
+    const calls: string[] = [];
+    const client = fakeClient({ calls });
+    const crossPlan = plan("issueCredit");
+    crossPlan.activityIds = ["activity-1", "activity-2"];
+    crossPlan.activityNames = ["活动一", "活动二"];
+    crossPlan.actions = [
+      crossPlan.actions[0],
+      {
+        ...crossPlan.actions[0],
+        id: "action-2",
+        activityId: "activity-2",
+        activityName: "活动二",
+        signUpId: "signup-2",
+        userId: "user-2",
+        creditItems: [{
+          ...crossPlan.actions[0].creditItems[0],
+          activityId: "activity-2",
+          activityName: "活动二",
+          creditId: "credit-2",
+          scoreId: "score-2",
+        }],
+      },
+    ];
+
+    await executeOperationPlan(client, crossPlan);
+
+    expect(calls).toContain("signCard:activity-1");
+    expect(calls).toContain("signCard:activity-2");
+    expect(calls).toContain("signList:activity-1:1");
+    expect(calls).toContain("signList:activity-2:1");
+    expect(calls).toContain("credited:activity-1:credit-1");
+    expect(calls).toContain("credited:activity-2:credit-2");
+    expect(calls).toContain("send:activity-1:credit-1:user-1");
+    expect(calls).toContain("send:activity-2:credit-2:user-2");
   });
 
   it("resolves the real user uid from sign lists when the plan has an invalid user id", async () => {
@@ -39,7 +77,7 @@ describe("operation executor", () => {
 
     await executeOperationPlan(client, plan("issueCredit", { userId: "机械工程学院" }));
 
-    expect(calls).toEqual(["credited:credit-1", "credited:credit-1", "send:credit-1:uid-actual"]);
+    expect(calls).toContain("send:activity-1:credit-1:uid-actual");
   });
 
   it("blocks issue actions when a valid user uid cannot be resolved", async () => {
@@ -66,6 +104,8 @@ function plan(kind: OperationPlan["kind"], overrides: { userId?: string } = {}):
     actions: [{
       id: "action-1",
       kind,
+      activityId: "activity-1",
+      activityName: "活动一",
       studentId: "20250001",
       studentName: "张三",
       signUpId: "signup-1",
@@ -99,19 +139,32 @@ function plan(kind: OperationPlan["kind"], overrides: { userId?: string } = {}):
 function fakeClient(options: { signCard?: string | null; credited?: unknown[]; calls?: string[]; signRows?: unknown[] } = {}): OperationExecutorClient {
   const signRows = options.signRows ?? [{ signUpId: "signup-1", userId: "user-1" }];
   return {
-    getSignCard: async () => options.signCard === undefined ? "card-1" : options.signCard,
-    getSignList: async (_activityId, type) => type === 1 ? signRows : [],
+    getSignCard: async (activityId) => {
+      options.calls?.push(`signCard:${activityId}`);
+      return options.signCard === undefined ? "card-1" : options.signCard;
+    },
+    getSignList: async (activityId, type) => {
+      options.calls?.push(`signList:${activityId}:${type}`);
+      return type === 1 ? signRowsForActivity(signRows, activityId) : [];
+    },
     getCreditList: async (_kind, _activityId, creditId) => {
-      options.calls?.push(`credited:${creditId}`);
+      options.calls?.push(`credited:${_activityId}:${creditId}`);
       return options.credited ?? [];
     },
-    resign: async (_activityId, signUpIds) => {
-      options.calls?.push(`resign:${signUpIds[0]}`);
+    resign: async (activityId, signUpIds) => {
+      options.calls?.push(`resign:${activityId}:${signUpIds[0]}`);
       return true;
     },
-    sendCredit: async (_activityId, creditId, userIds) => {
-      options.calls?.push(`send:${creditId}:${userIds[0]}`);
+    sendCredit: async (activityId, creditId, userIds) => {
+      options.calls?.push(`send:${activityId}:${creditId}:${userIds[0]}`);
       return true;
     },
   };
+}
+
+function signRowsForActivity(signRows: unknown[], activityId: string): unknown[] {
+  const suffix = activityId.endsWith("2") ? "2" : "1";
+  return signRows.length === 1 && activityId.endsWith("2")
+    ? [{ signUpId: `signup-${suffix}`, userId: `user-${suffix}` }]
+    : signRows;
 }

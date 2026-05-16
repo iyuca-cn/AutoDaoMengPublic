@@ -25,6 +25,16 @@
       @refresh="loadDetail(detail.activityId)"
       @plan-created="onPlanCreated"
     />
+    <MultiActivityDetail
+      v-else-if="multiDetailOpen"
+      :details="multiDetails"
+      :errors="multiErrors"
+      :loading="loading"
+      :progress-message="streamMessage"
+      @back="closeMultiDetail"
+      @refresh="loadMultiDetails"
+      @plan-created="onPlanCreated"
+    />
 
     <div v-else class="panel overflow-hidden">
       <ActivityTable :items="filteredItems" :selected-ids="selectedIds" @toggle="toggle" @open="loadDetail" />
@@ -34,15 +44,19 @@
         @invert="invert"
         @clear="selectedIds = []"
       >
-        <button type="button" class="text-button" :disabled="!canUseSelectedActivities" @click="openSelectedActivity">
+        <button type="button" class="text-button" :disabled="!canUseSelectedActivities || loading" @click="openSelectedActivity">
+          <FileSearch class="h-4 w-4" />
+          查看详情
+        </button>
+        <button type="button" class="text-button" :disabled="!canUseSelectedActivities || loading" @click="openSelectedActivity">
           <UserCheck class="h-4 w-4" />
           补签
         </button>
-        <button type="button" class="text-button" :disabled="!canUseSelectedActivities" @click="openSelectedActivity">
+        <button type="button" class="text-button" :disabled="!canUseSelectedActivities || loading" @click="openSelectedActivity">
           <BadgeCheck class="h-4 w-4" />
           发放学分
         </button>
-        <button type="button" class="text-button" :disabled="!canUseSelectedActivities" @click="openSelectedActivity">
+        <button type="button" class="text-button" :disabled="!canUseSelectedActivities || loading" @click="openSelectedActivity">
           <ListPlus class="h-4 w-4" />
           加入计划
         </button>
@@ -57,13 +71,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { BadgeCheck, Ban, ListPlus, RefreshCw, UserCheck } from "lucide-vue-next";
-import { apiGet, apiPatch } from "../api";
+import { BadgeCheck, Ban, FileSearch, ListPlus, RefreshCw, UserCheck } from "lucide-vue-next";
+import { apiGet, apiPatch, apiStream } from "../api";
 import ActivityDetail from "../components/ActivityDetail.vue";
 import ActivityTable from "../components/ActivityTable.vue";
 import DataToolbar from "../components/DataToolbar.vue";
+import MultiActivityDetail from "../components/MultiActivityDetail.vue";
 import SelectionBar from "../components/SelectionBar.vue";
-import type { ActivityDetail as ActivityDetailType, ActivityOverviewItem, OperationAction, OperationPlan } from "../types";
+import type { ActivityDetail as ActivityDetailType, ActivityOverviewItem, ApiStreamEvent, OperationAction, OperationPlan } from "../types";
 
 const emit = defineEmits<{
   "open-plans": [plan?: OperationPlan];
@@ -71,9 +86,13 @@ const emit = defineEmits<{
 
 const items = ref<ActivityOverviewItem[]>([]);
 const detail = ref<ActivityDetailType | null>(null);
+const multiDetailOpen = ref(false);
+const multiDetails = ref<ActivityDetailType[]>([]);
+const multiErrors = ref<Array<{ activityId: string; message: string }>>([]);
 const loading = ref(false);
 const error = ref("");
 const message = ref("");
+const streamMessage = ref("");
 const selectedIds = ref<string[]>([]);
 const filters = ref<Record<string, string>>({
   activity: "",
@@ -120,8 +139,14 @@ async function loadDetail(activityId: string) {
   loading.value = true;
   error.value = "";
   message.value = "";
+  streamMessage.value = "";
   try {
-    detail.value = await apiGet<ActivityDetailType>(`/api/activities/${activityId}`);
+    detail.value = await apiStream<ActivityDetailType>(`/api/activities/${activityId}/stream`, {
+      onEvent: (event) => {
+        streamMessage.value = event.message || streamMessage.value;
+      },
+    });
+    multiDetailOpen.value = false;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   } finally {
@@ -134,16 +159,60 @@ function onPlanCreated(plan: OperationPlan) {
 }
 
 async function openSelectedActivity() {
-  const activityId = effectiveSelectedIds.value[0];
-  if (!activityId) {
+  if (effectiveSelectedIds.value.length === 0) {
     return;
   }
   message.value = "";
   if (effectiveSelectedIds.value.length > 1) {
-    error.value = "一次只能进入一个活动生成操作计划，请只选择一个活动，或直接打开目标活动详情。";
+    await loadMultiDetails();
     return;
   }
+  const activityId = effectiveSelectedIds.value[0];
   await loadDetail(activityId);
+}
+
+async function loadMultiDetails() {
+  const activityIds = effectiveSelectedIds.value;
+  if (activityIds.length === 0) {
+    return;
+  }
+  loading.value = true;
+  error.value = "";
+  message.value = "";
+  streamMessage.value = "";
+  detail.value = null;
+  multiDetailOpen.value = true;
+  multiDetails.value = [];
+  multiErrors.value = [];
+  try {
+    const result = await apiStream<{ details: ActivityDetailType[]; errors: Array<{ activityId: string; message: string }> }>("/api/activities/details/stream", {
+      method: "POST",
+      body: { activityIds },
+      nonFatalErrorCodes: ["ACTIVITY_DETAIL_FAILED"],
+      onEvent: (event: ApiStreamEvent<ActivityDetailType | { activityId: string; message: string } | { details: ActivityDetailType[]; errors: Array<{ activityId: string; message: string }> }>) => {
+        streamMessage.value = event.message || streamMessage.value;
+        if (event.type === "data" && isActivityDetail(event.data)) {
+          multiDetails.value = upsertDetail(multiDetails.value, event.data);
+        }
+        if (event.type === "error" && isActivityError(event.data)) {
+          multiErrors.value = upsertError(multiErrors.value, event.data);
+        }
+      },
+    });
+    multiDetails.value = result.details;
+    multiErrors.value = result.errors;
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    loading.value = false;
+  }
+}
+
+function closeMultiDetail() {
+  multiDetailOpen.value = false;
+  multiDetails.value = [];
+  multiErrors.value = [];
+  streamMessage.value = "";
 }
 
 async function cancelPlannedIssues() {
@@ -156,7 +225,7 @@ async function cancelPlannedIssues() {
   message.value = "";
   try {
     const plans = await apiGet<OperationPlan[]>("/api/operation-plans");
-    const editablePlans = plans.filter((plan) => activityIds.has(plan.activityId) && ["draft", "ready"].includes(plan.status));
+    const editablePlans = plans.filter((plan) => planActivityIds(plan).some((activityId) => activityIds.has(activityId)) && ["draft", "ready"].includes(plan.status));
     let changedPlanCount = 0;
     let changedActionCount = 0;
     for (const plan of editablePlans) {
@@ -231,5 +300,25 @@ function cancelIssueActions(actions: OperationAction[]): { actions: OperationAct
 
 function appendNote(note: string | undefined, value: string): string {
   return note ? `${note}；${value}` : value;
+}
+
+function planActivityIds(plan: OperationPlan): string[] {
+  return plan.activityIds?.length ? plan.activityIds : [plan.activityId];
+}
+
+function upsertDetail(details: ActivityDetailType[], detail: ActivityDetailType): ActivityDetailType[] {
+  return [...details.filter((item) => item.activityId !== detail.activityId), detail];
+}
+
+function upsertError(errors: Array<{ activityId: string; message: string }>, error: { activityId: string; message: string }) {
+  return [...errors.filter((item) => item.activityId !== error.activityId), error];
+}
+
+function isActivityDetail(value: unknown): value is ActivityDetailType {
+  return typeof value === "object" && value !== null && "activityId" in value && "signLists" in value;
+}
+
+function isActivityError(value: unknown): value is { activityId: string; message: string } {
+  return typeof value === "object" && value !== null && "activityId" in value && "message" in value;
 }
 </script>

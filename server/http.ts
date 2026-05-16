@@ -7,6 +7,13 @@ export interface ApiErrorBody {
   };
 }
 
+export interface StreamEvent<T = unknown> {
+  type: "started" | "progress" | "data" | "task" | "completed" | "error";
+  message?: string;
+  data?: T;
+  code?: string;
+}
+
 export function jsonOk<T>(data: T, init: ResponseInit = {}): Response {
   return Response.json({ success: true, data }, init);
 }
@@ -36,6 +43,36 @@ export class HttpError extends Error {
     super(message);
     this.name = "HttpError";
   }
+}
+
+export function ndjsonStream(handler: (send: (event: StreamEvent) => void) => Promise<void>): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: StreamEvent) => {
+        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+      };
+      try {
+        await handler(send);
+      } catch (error) {
+        if (error instanceof HttpError) {
+          send({ type: "error", message: error.message, code: error.code, data: { status: error.status, details: error.details } });
+        } else if (error instanceof Error) {
+          send({ type: "error", message: error.message, code: "INTERNAL_ERROR" });
+        } else {
+          send({ type: "error", message: String(error), code: "INTERNAL_ERROR" });
+        }
+      } finally {
+        controller.close();
+      }
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      "content-type": "application/x-ndjson; charset=utf-8",
+      "cache-control": "no-cache",
+    },
+  });
 }
 
 export function toErrorResponse(error: unknown): Response {
