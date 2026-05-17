@@ -1,3 +1,5 @@
+import { USER_TIMEZONE_HEADER, userTimeZone, withUserTimeZoneQuery } from "./time";
+
 export interface ApiResult<T> {
   success: boolean;
   data?: T;
@@ -154,7 +156,7 @@ async function readResponse<T>(response: Response, path: string): Promise<T> {
 }
 
 export function downloadUrl(path: string): string {
-  return resolveApiUrl(path);
+  return resolveApiUrl(withUserTimeZoneQuery(path));
 }
 
 export function resolveApiUrl(path: string, location: LocationLike | undefined = currentLocation()): string {
@@ -175,10 +177,19 @@ export function resolveApiUrl(path: string, location: LocationLike | undefined =
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const url = resolveApiUrl(path);
   try {
-    return await fetch(url, init);
+    return await fetch(url, withUserTimeZoneHeader(init));
   } catch (error) {
     throw toNetworkError(error, url);
   }
+}
+
+function withUserTimeZoneHeader(init: RequestInit = {}): RequestInit {
+  const headers = new Headers(init.headers);
+  headers.set(USER_TIMEZONE_HEADER, userTimeZone());
+  return {
+    ...init,
+    headers,
+  };
 }
 
 function configuredApiBaseUrl(): string {

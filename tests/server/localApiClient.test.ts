@@ -62,4 +62,24 @@ describe("DmLocalApiClient", () => {
     expect(signals[0].aborted).toBe(true);
     vi.useRealTimers();
   });
+
+  it("uses the longer write timeout for batch write routes", async () => {
+    vi.useFakeTimers();
+    const signals: AbortSignal[] = [];
+    const client = new DmLocalApiClient("http://127.0.0.1:8765", (_input, init) => {
+      signals.push(init?.signal as AbortSignal);
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      });
+    }, { requestTimeoutMs: 5_000, writeRequestTimeoutMs: 20_000 });
+
+    const pending = expect(client.sendCredit("1001", "301", ["u-001", "u-002"])).rejects.toThrow("DM 本地代理请求超时：20000ms");
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(signals[0].aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    await pending;
+    expect(signals[0].aborted).toBe(true);
+    vi.useRealTimers();
+  });
 });

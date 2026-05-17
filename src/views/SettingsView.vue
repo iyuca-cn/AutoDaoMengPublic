@@ -69,6 +69,7 @@
 import { onMounted, ref } from "vue";
 import { Power, RefreshCw } from "lucide-vue-next";
 import { apiGet, apiPost } from "../api";
+import { formatUserDateTime } from "../time";
 import type { SessionSource, SessionStatus } from "../types";
 
 interface ConfigResponse {
@@ -125,9 +126,6 @@ function sourceLabel(source?: SessionSource): string {
 }
 
 function formatTime(value?: string): string {
-  if (!value) {
-    return "未验证";
-  }
-  return new Date(value).toLocaleString("zh-CN", { hour12: false });
+  return formatUserDateTime(value) || "未验证";
 }
 </script>

@@ -1,12 +1,16 @@
 import * as XLSX from "xlsx";
 import { formatCreditCent, type ExecutionDetail, type ExecutionTask, type OperationPlan, type Plan } from "./models";
+import { formatUserDateTime, type UserTimeContext } from "./time";
 
-export function writePlanSummaryWorkbook(plan: Plan): ArrayBuffer {
+const DEFAULT_TIME_CONTEXT: UserTimeContext = { timeZone: "UTC" };
+
+export function writePlanSummaryWorkbook(plan: Plan, timeContext: UserTimeContext = DEFAULT_TIME_CONTEXT): ArrayBuffer {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([
     {
       "计划ID": plan.id,
       "计划名称": plan.name,
+      "生成时间": formatUserDateTime(plan.generatedAt, timeContext),
       "需求数": plan.summary.demandCount,
       "学生数": plan.summary.studentCount,
       "活动数": plan.summary.activityCount,
@@ -22,19 +26,21 @@ export function writePlanSummaryWorkbook(plan: Plan): ArrayBuffer {
   return workbookToArrayBuffer(workbook);
 }
 
-export function writePlanDetailWorkbook(plan: Plan): ArrayBuffer {
+export function writePlanDetailWorkbook(plan: Plan, _timeContext: UserTimeContext = DEFAULT_TIME_CONTEXT): ArrayBuffer {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(planDetailRows(plan)), "个人计划明细");
   return workbookToArrayBuffer(workbook);
 }
 
-export function writeOperationPlanDetailWorkbook(plan: OperationPlan): ArrayBuffer {
+export function writeOperationPlanDetailWorkbook(plan: OperationPlan, timeContext: UserTimeContext = DEFAULT_TIME_CONTEXT): ArrayBuffer {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(operationPlanDetailRows(plan)), "个人操作计划明细");
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([{
     "计划ID": plan.id,
     "计划名称": plan.name,
     "状态": plan.status,
+    "创建时间": formatUserDateTime(plan.createdAt, timeContext),
+    "更新时间": formatUserDateTime(plan.updatedAt, timeContext),
     "活动数": plan.activityIds?.length ?? 1,
     "动作数": plan.summary.actionCount,
     "启用动作数": plan.summary.enabledCount,
@@ -47,13 +53,15 @@ export function writeOperationPlanDetailWorkbook(plan: OperationPlan): ArrayBuff
   return workbookToArrayBuffer(workbook);
 }
 
-export function writeExecutionWorkbook(task: ExecutionTask): ArrayBuffer {
+export function writeExecutionWorkbook(task: ExecutionTask, plan?: Plan | OperationPlan, timeContext: UserTimeContext = DEFAULT_TIME_CONTEXT): ArrayBuffer {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([
     {
       "任务ID": task.id,
       "计划ID": task.planId,
       "状态": task.status,
+      "创建时间": formatUserDateTime(task.createdAt, timeContext),
+      "更新时间": formatUserDateTime(task.updatedAt, timeContext),
       "补签成功": task.result?.resignSuccessCount ?? 0,
       "发放成功": task.result?.issueSuccessCount ?? 0,
       "撤销成功": task.result?.abandonSuccessCount ?? 0,
@@ -62,6 +70,7 @@ export function writeExecutionWorkbook(task: ExecutionTask): ArrayBuffer {
     },
   ]), "执行摘要");
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(executionDetailRows(task.result?.details ?? [])), "个人执行明细");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(unfinishedRows(plan, task.result?.details ?? [])), "剩余未完成明细");
   return workbookToArrayBuffer(workbook);
 }
 
@@ -225,6 +234,146 @@ function executionDetailRows(details: ExecutionDetail[]): Array<Record<string, s
       detail.message,
     ].filter(Boolean).join("；"),
   })));
+}
+
+interface PlannedExecutionItem {
+  studentId?: string;
+  studentName: string;
+  activityId: string;
+  activityName: string;
+  signUpId?: string;
+  userId?: string;
+  creditId?: string;
+  scoreId?: string;
+  creditType?: string;
+  plannedValueCent: number;
+  action: ExecutionDetail["action"];
+}
+
+function unfinishedRows(plan: Plan | OperationPlan | undefined, details: ExecutionDetail[]): Array<Record<string, string | number>> {
+  if (!plan) {
+    return [{
+      "学号": "",
+      "姓名": "",
+      "活动ID": "",
+      "活动名称": "",
+      "动作": "",
+      "学分类型": "",
+      "计划处理学分": "",
+      "状态": "",
+      "说明": "未找到原计划，无法计算剩余未完成部分",
+    }];
+  }
+  const completedKeys = new Set(details.filter((detail) => detail.status === "success" || detail.status === "skipped").map(executionDetailKey));
+  const failedByKey = new Map(details.filter((detail) => detail.status === "failed").map((detail) => [executionDetailKey(detail), detail]));
+  const rows = plannedItems(plan).filter((item) => !completedKeys.has(plannedItemKey(item))).map((item) => {
+    const failed = failedByKey.get(plannedItemKey(item));
+    return {
+      "学号": item.studentId ?? "",
+      "姓名": item.studentName,
+      "活动ID": item.activityId,
+      "活动名称": item.activityName,
+      "动作": actionLabel(item.action),
+      "学分类型": item.creditType ?? "",
+      "计划处理学分": formatCreditCent(item.plannedValueCent),
+      "状态": failed ? "失败未完成" : "未执行",
+      "说明": failed?.message ?? "计划中尚未完成",
+    };
+  });
+  if (rows.length === 0) {
+    return [{
+      "学号": "",
+      "姓名": "",
+      "活动ID": "",
+      "活动名称": "",
+      "动作": "",
+      "学分类型": "",
+      "计划处理学分": "",
+      "状态": "已全部完成",
+      "说明": "没有剩余未完成项",
+    }];
+  }
+  return rows;
+}
+
+function plannedItems(plan: Plan | OperationPlan): PlannedExecutionItem[] {
+  return "allocations" in plan ? plannedCreditItems(plan) : plannedOperationItems(plan);
+}
+
+function plannedCreditItems(plan: Plan): PlannedExecutionItem[] {
+  return plan.allocations.filter((allocation) => allocation.enabled).flatMap((allocation) => allocation.assignments.flatMap((assignment) => (
+    assignment.bundle.creditItems.map((creditItem) => ({
+      studentId: allocation.demand.studentId,
+      studentName: allocation.demand.studentName,
+      activityId: assignment.bundle.activityId,
+      activityName: assignment.bundle.activityName,
+      signUpId: assignment.signUpId,
+      userId: assignment.userId,
+      creditId: creditItem.creditId,
+      scoreId: creditItem.scoreId,
+      creditType: creditItem.creditType,
+      plannedValueCent: creditItem.unitcountCent,
+      action: "issueCredit" as const,
+    }))
+  )));
+}
+
+function plannedOperationItems(plan: OperationPlan): PlannedExecutionItem[] {
+  return plan.actions.filter((action) => action.enabled).flatMap((action) => {
+    const resignItems = action.kind === "resign" || action.kind === "resignThenIssueCredit"
+      ? [{
+        studentId: action.studentId,
+        studentName: action.studentName,
+        activityId: action.activityId,
+        activityName: action.activityName,
+        signUpId: action.signUpId,
+        userId: action.userId,
+        plannedValueCent: 0,
+        action: "resign" as const,
+      }]
+      : [];
+    const creditItems = action.creditItems.flatMap((item) => {
+      if (action.kind === "resign") {
+        return [];
+      }
+      const executionAction = action.kind === "abandonCredit" ? "abandonCredit" as const : "issueCredit" as const;
+      return [{
+        studentId: action.studentId,
+        studentName: action.studentName,
+        activityId: item.activityId || action.activityId,
+        activityName: item.activityName || action.activityName,
+        signUpId: action.signUpId,
+        userId: action.userId,
+        creditId: item.creditId,
+        scoreId: item.scoreId,
+        creditType: item.creditType,
+        plannedValueCent: item.unitcountCent,
+        action: executionAction,
+      }];
+    });
+    return [...resignItems, ...creditItems];
+  });
+}
+
+function plannedItemKey(item: PlannedExecutionItem): string {
+  return executionKeyParts(item).join(":");
+}
+
+function executionDetailKey(detail: ExecutionDetail): string {
+  return executionKeyParts(detail).join(":");
+}
+
+function executionKeyParts(item: PlannedExecutionItem | ExecutionDetail): string[] {
+  return [
+    item.action,
+    item.activityId,
+    item.signUpId ?? "",
+    item.studentId ?? "",
+    item.studentName,
+    item.creditId ?? "",
+    item.scoreId ?? "",
+    item.creditType ?? "",
+  ];
 }
 
 interface PersonAggregateInput {

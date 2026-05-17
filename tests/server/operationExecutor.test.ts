@@ -34,6 +34,36 @@ describe("operation executor", () => {
     ]));
   });
 
+  it("batch resigns members by activity and issues one credit type together", async () => {
+    const calls: string[] = [];
+    const client = fakeClient({
+      calls,
+      signRows: [
+        { signUpId: "signup-1", userId: "user-1" },
+        { signUpId: "signup-2", userId: "user-2" },
+      ],
+    });
+    const batchPlan = plan("resignThenIssueCredit");
+    batchPlan.actions = [
+      batchPlan.actions[0],
+      {
+        ...batchPlan.actions[0],
+        id: "action-2",
+        studentId: "20250002",
+        studentName: "李四",
+        signUpId: "signup-2",
+        userId: "user-2",
+      },
+    ];
+
+    const result = await executeOperationPlan(client, batchPlan);
+
+    expect(calls).toContain("resign:activity-1:signup-1,signup-2");
+    expect(calls).toContain("send:activity-1:credit-1:user-1,user-2");
+    expect(result.resignSuccessCount).toBe(2);
+    expect(result.issueSuccessCount).toBe(2);
+  });
+
   it("executes abandon credit with the credited userScoreId", async () => {
     const calls: string[] = [];
     const client = fakeClient({ calls, credited: [{ signUpId: "signup-1", userScoreId: "user-score-1" }] });
@@ -191,11 +221,11 @@ function fakeClient(options: { signCard?: string | null; credited?: unknown[]; c
       return options.credited ?? [];
     },
     resign: async (activityId, signUpIds) => {
-      options.calls?.push(`resign:${activityId}:${signUpIds[0]}`);
+      options.calls?.push(`resign:${activityId}:${signUpIds.join(",")}`);
       return true;
     },
     sendCredit: async (activityId, creditId, userIds) => {
-      options.calls?.push(`send:${activityId}:${creditId}:${userIds[0]}`);
+      options.calls?.push(`send:${activityId}:${creditId}:${userIds.join(",")}`);
       return true;
     },
     abandonCredit: async (activityId, creditId, userScoreIds) => {

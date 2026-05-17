@@ -23,7 +23,7 @@ describe("reports", () => {
   });
 
   it("exports execution details with one row per person and actual credit value total", () => {
-    const sheets = readWorkbook(writeExecutionWorkbook(task()));
+    const sheets = readWorkbook(writeExecutionWorkbook(task(), plan()));
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheets.Sheets["个人执行明细"]);
 
     expect(sheets.SheetNames).toContain("个人执行明细");
@@ -37,6 +37,38 @@ describe("reports", () => {
     });
     expect(String(rows[0]["明细说明"])).toContain("活动一");
     expect(String(rows[0]["明细说明"])).toContain("活动二");
+  });
+
+  it("exports unfinished rows for failed execution tasks", () => {
+    const failedTask = task();
+    failedTask.status = "failed";
+    failedTask.result = {
+      ...failedTask.result,
+      issueSuccessCount: 1,
+      failedCount: 1,
+      details: [
+        executionDetail("activity-1", "活动一", "credit-1", "score-1", "美育实践学分"),
+        {
+          ...executionDetail("activity-2", "活动二", "credit-2", "score-2", "思想成长学分"),
+          status: "failed",
+          actualValueCent: 0,
+          message: "发放失败：代理超时",
+        },
+      ],
+    };
+
+    const sheets = readWorkbook(writeExecutionWorkbook(failedTask, plan()));
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheets.Sheets["剩余未完成明细"]);
+
+    expect(sheets.SheetNames).toContain("剩余未完成明细");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      "学号": "20250001",
+      "姓名": "张三",
+      "活动名称": "活动二",
+      "状态": "失败未完成",
+      "说明": "发放失败：代理超时",
+    });
   });
 
   it("exports operation plan details with one row per person", () => {

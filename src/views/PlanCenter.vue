@@ -47,7 +47,7 @@
               <span class="label">计划标题</span>
               <input class="field" v-model.trim="editablePlanName" :disabled="saving || !canEditCredit" />
             </label>
-            <p class="mt-1 text-sm text-slate-600">{{ statusLabel(selectedPlan.status) }} · {{ selectedPlan.generatedAt }}</p>
+            <p class="mt-1 text-sm text-slate-600">{{ statusLabel(selectedPlan.status) }} · {{ formatTime(selectedPlan.generatedAt) }}</p>
           </div>
           <div class="flex flex-wrap gap-2">
             <a class="text-button" :href="downloadUrl(`/api/plans/${selectedPlan.id}/reports/summary.xlsx`)">
@@ -109,7 +109,7 @@
               <span class="label">计划标题</span>
               <input class="field" v-model.trim="editableOperationName" :disabled="saving || !canEditOperation" />
             </label>
-            <p class="mt-1 text-sm text-slate-600">{{ operationActivityLabel(selectedOperationPlan) }} · {{ statusLabel(selectedOperationPlan.status) }} · {{ selectedOperationPlan.createdAt }}</p>
+            <p class="mt-1 text-sm text-slate-600">{{ operationActivityLabel(selectedOperationPlan) }} · {{ statusLabel(selectedOperationPlan.status) }} · {{ formatTime(selectedOperationPlan.createdAt) }}</p>
           </div>
           <div class="flex flex-wrap gap-2">
             <a class="text-button" :href="downloadUrl(`/api/operation-plans/${selectedOperationPlan.id}/reports/details.xlsx`)">
@@ -136,6 +136,7 @@
 import { computed, onMounted, ref, toRaw, watch } from "vue";
 import { Download, RefreshCw, Save, Trash2 } from "lucide-vue-next";
 import { apiDelete, apiGet, apiPatch, downloadUrl } from "../api";
+import { formatUserDateTime } from "../time";
 import OperationPlanTable from "../components/OperationPlanTable.vue";
 import PlanActivityView from "../components/PlanActivityView.vue";
 import PlanAllocationTable from "../components/PlanAllocationTable.vue";
@@ -260,6 +261,10 @@ function statusLabel(status: Plan["status"] | OperationPlan["status"]): string {
 function operationActivityLabel(plan: OperationPlan): string {
   const names = plan.activityNames?.length ? plan.activityNames : [plan.activityName];
   return names.length === 1 ? names[0] : `${names.length} 个活动`;
+}
+
+function formatTime(value?: string): string {
+  return formatUserDateTime(value) || "-";
 }
 
 function cloneEditable<T>(value: T): T {

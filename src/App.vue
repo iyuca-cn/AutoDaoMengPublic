@@ -48,6 +48,7 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { LogOut } from "lucide-vue-next";
 import { API_UNAUTHORIZED_EVENT, apiDelete, apiGet, type ApiUnauthorizedEventDetail } from "./api";
+import { formatUserDateTime } from "./time";
 import AppNav from "./components/AppNav.vue";
 import ActivityOverview from "./views/ActivityOverview.vue";
 import ExecutionCenter from "./views/ExecutionCenter.vue";
@@ -122,9 +123,6 @@ function sourceLabel(source?: SessionSource): string {
 }
 
 function formatTime(value?: string): string {
-  if (!value) {
-    return "未验证";
-  }
-  return new Date(value).toLocaleString("zh-CN", { hour12: false });
+  return formatUserDateTime(value) || "未验证";
 }
 </script>

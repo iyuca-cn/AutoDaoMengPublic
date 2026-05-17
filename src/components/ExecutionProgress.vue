@@ -6,7 +6,7 @@
     </div>
     <ol class="mt-3 grid gap-2 text-sm">
       <li v-for="event in task.events" :key="`${event.time}-${event.message}`" class="flex gap-2">
-        <span class="w-36 shrink-0 text-xs text-slate-500">{{ event.time }}</span>
+        <span class="w-40 shrink-0 text-xs text-slate-500">{{ formatTime(event.time) }}</span>
         <span>{{ event.message }}</span>
       </li>
     </ol>
@@ -15,8 +15,13 @@
 
 <script setup lang="ts">
 import type { ExecutionTask } from "../types";
+import { formatUserDateTime } from "../time";
 
 defineProps<{
   task: ExecutionTask;
 }>();
+
+function formatTime(value?: string): string {
+  return formatUserDateTime(value) || "-";
+}
 </script>

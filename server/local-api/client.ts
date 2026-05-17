@@ -34,22 +34,26 @@ export interface FetchLike {
 
 export interface DmLocalApiClientOptions {
   requestTimeoutMs?: number;
+  writeRequestTimeoutMs?: number;
 }
 
 type JsonRecord = Record<string, unknown>;
 
 const SENSITIVE_KEYS = new Set(["uid", "token", "api_token", "pwd", "account"]);
 const DEFAULT_REQUEST_TIMEOUT_MS = 8_000;
+const DEFAULT_WRITE_REQUEST_TIMEOUT_MS = 120_000;
 
 export class DmLocalApiClient {
   private currentBaseUrl: string;
   private readonly fetcher: FetchLike;
   private readonly requestTimeoutMs: number;
+  private readonly writeRequestTimeoutMs: number;
 
   constructor(baseUrl: string, fetcher: FetchLike = fetch, options: DmLocalApiClientOptions = {}) {
     this.currentBaseUrl = normalizeBaseUrl(baseUrl);
     this.fetcher = fetcher;
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.writeRequestTimeoutMs = options.writeRequestTimeoutMs ?? DEFAULT_WRITE_REQUEST_TIMEOUT_MS;
   }
 
   get baseUrl(): string {
@@ -97,7 +101,7 @@ export class DmLocalApiClient {
       activityId,
       signUpId_list: signUpIds,
       is_all: isAll,
-    });
+    }, { timeoutMs: this.writeRequestTimeoutMs });
   }
 
   async getCreditTypes(activityId: string): Promise<unknown[]> {
@@ -124,7 +128,7 @@ export class DmLocalApiClient {
       activityId,
       scoreId: creditId,
       userList: userIds.join(","),
-    });
+    }, { timeoutMs: this.writeRequestTimeoutMs });
   }
 
   async abandonCredit(activityId: string, creditId: string, userScoreIds: string[]): Promise<boolean> {
@@ -135,7 +139,7 @@ export class DmLocalApiClient {
       activityId,
       scoreId: creditId,
       userScoreIds: userScoreIds.join(","),
-    });
+    }, { timeoutMs: this.writeRequestTimeoutMs });
   }
 
   async sendCreditByName(activityId: string, scoreId: string, usernameList: string[]): Promise<boolean> {
@@ -177,14 +181,14 @@ export class DmLocalApiClient {
     return this.readJsonResponse<T>(response);
   }
 
-  async post<T>(path: string, body: JsonRecord = {}): Promise<T> {
+  async post<T>(path: string, body: JsonRecord = {}, options: { timeoutMs?: number } = {}): Promise<T> {
     const response = await this.fetchWithTimeout(this.buildUrl(path), {
       method: "POST",
       headers: {
         "content-type": "application/json",
       },
       body: JSON.stringify(body),
-    });
+    }, options.timeoutMs);
     return this.readJsonResponse<T>(response);
   }
 
@@ -209,8 +213,8 @@ export class DmLocalApiClient {
     return url.toString();
   }
 
-  private async fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-    const timeoutMs = Math.max(1, this.requestTimeoutMs);
+  private async fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, overrideTimeoutMs?: number): Promise<Response> {
+    const timeoutMs = Math.max(1, overrideTimeoutMs ?? this.requestTimeoutMs);
     const controller = new AbortController();
     const existingSignal = init.signal;
     const timeout = setTimeout(() => controller.abort(), timeoutMs);

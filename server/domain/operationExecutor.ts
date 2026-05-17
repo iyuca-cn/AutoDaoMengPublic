@@ -121,8 +121,10 @@ export async function executeOperationPlan(client: OperationExecutorClient, plan
   let skippedAlreadyIssuedCount = 0;
   let failedCount = 0;
   const details: ExecutionDetail[] = [];
+  const enabledActions = report.normalizedActions.filter((item) => item.enabled);
+  const blockedIssueActionIds = new Set<string>();
 
-  for (const action of report.normalizedActions.filter((item) => item.enabled)) {
+  for (const action of enabledActions.filter((item) => item.kind === "abandonCredit")) {
     const activityId = action.activityId || plan.activityId;
     if (action.kind === "abandonCredit") {
       for (const item of action.creditItems) {
@@ -150,27 +152,63 @@ export async function executeOperationPlan(client: OperationExecutorClient, plan
       }
       continue;
     }
-    let canIssue = true;
-    if (action.kind === "resign" || action.kind === "resignThenIssueCredit") {
-      const unsigned = await client.getSignList(activityId, SIGN_TYPES.unsigned);
-      const unsignedIds = new Set(unsigned.map((row) => getFirstString(row, ["signUpId", "signupId", "id"])));
-      if (unsignedIds.has(action.signUpId)) {
-        const ok = await client.resign(activityId, [action.signUpId], false);
-        if (ok) {
-          resignSuccessCount += 1;
-          const message = `已为 ${action.studentName} 补签`;
-          details.push(detailFromAction(action, "resign", "success", 0, 0, message));
-          onEvent?.(message);
-        } else {
-          failedCount += 1;
-          canIssue = false;
-          details.push(detailFromAction(action, "resign", "failed", 0, 0, `${action.studentName} 补签失败`));
+  }
+
+  const resignActions = enabledActions.filter((action) => action.kind === "resign" || action.kind === "resignThenIssueCredit");
+  for (const [activityId, actions] of groupByActivity(resignActions)) {
+    let unsigned: unknown[];
+    try {
+      unsigned = await client.getSignList(activityId, SIGN_TYPES.unsigned);
+    } catch (error) {
+      failedCount += actions.reduce((sum, action) => sum + (action.kind === "resign" ? 1 : 1 + action.creditItems.length), 0);
+      const reason = error instanceof Error ? error.message : String(error);
+      for (const action of actions) {
+        blockedIssueActionIds.add(action.id);
+        details.push(detailFromAction(action, "resign", "failed", 0, 0, `${action.studentName} 读取未签到名单失败：${reason}`));
+        if (action.kind === "resignThenIssueCredit") {
+          for (const item of action.creditItems) {
+            details.push(detailFromAction(action, "issueCredit", "failed", item.unitcountCent, 0, `${action.studentName} 补签状态未确认，跳过发放：${reason}`, item));
+          }
         }
       }
-    }
-    if (action.kind === "resign" || !canIssue) {
+      onEvent?.(`${actions[0]?.activityName || plan.activityName} 读取未签到名单失败：${reason}`);
       continue;
     }
+    const unsignedIds = new Set(unsigned.map((row) => getFirstString(row, ["signUpId", "signupId", "id"])));
+    const targets = actions.filter((action) => unsignedIds.has(action.signUpId));
+    if (targets.length === 0) {
+      continue;
+    }
+    const signUpIds = uniqueStrings(targets.map((action) => action.signUpId));
+    const activityName = targets[0]?.activityName || plan.activityName;
+    onEvent?.(`开始为 ${activityName} 批量补签 ${targets.length} 人`);
+    try {
+      const ok = await client.resign(activityId, signUpIds, false);
+      if (!ok) {
+        throw new Error("代理返回补签失败");
+      }
+      resignSuccessCount += targets.length;
+      for (const action of targets) {
+        const message = `已为 ${action.studentName} 补签`;
+        details.push(detailFromAction(action, "resign", "success", 0, 0, message));
+      }
+      onEvent?.(`已为 ${activityName} 批量补签 ${targets.length} 人`);
+    } catch (error) {
+      failedCount += targets.length;
+      const reason = error instanceof Error ? error.message : String(error);
+      for (const action of targets) {
+        blockedIssueActionIds.add(action.id);
+        details.push(detailFromAction(action, "resign", "failed", 0, 0, `${action.studentName} 补签失败：${reason}`));
+      }
+      onEvent?.(`${activityName} 批量补签失败：${reason}`);
+    }
+  }
+
+  const issueActions = enabledActions.filter((action) => (
+    action.kind === "issueCredit" || action.kind === "resignThenIssueCredit"
+  ) && !blockedIssueActionIds.has(action.id));
+  for (const action of issueActions) {
+    const activityId = action.activityId || plan.activityId;
     if (isInvalidUserId(action.userId)) {
       failedCount += action.creditItems.length;
       const message = `${action.studentName} 缺少有效 userId，跳过发放`;
@@ -180,28 +218,63 @@ export async function executeOperationPlan(client: OperationExecutorClient, plan
       onEvent?.(message);
       continue;
     }
-    const userId = String(action.userId ?? "").trim();
-    for (const item of action.creditItems) {
-      const itemActivityId = item.activityId || activityId;
-      const credited = await client.getCreditList("credited", itemActivityId, item.creditId);
-      const creditedKeys = new Set(credited.flatMap(rowIdentityKeys));
-      if (actionIdentityKeys(action).some((key) => creditedKeys.has(key))) {
-        skippedAlreadyIssuedCount += 1;
-        const message = `${action.studentName} 已发放 ${item.creditType}，跳过`;
-        details.push(detailFromAction(action, "issueCredit", "skipped", item.unitcountCent, 0, message, item));
-        onEvent?.(message);
-        continue;
+  }
+
+  const issueEntries = issueActions
+    .filter((action) => !isInvalidUserId(action.userId))
+    .flatMap((action) => action.creditItems.map((item) => ({
+      action,
+      item,
+      activityId: item.activityId || action.activityId || plan.activityId,
+      userId: String(action.userId ?? "").trim(),
+    })));
+  const issueBatches = groupBy(issueEntries, (entry) => `${entry.activityId}:${entry.item.creditId}`);
+  for (const [, batch] of issueBatches) {
+    const first = batch[0];
+    let credited: unknown[];
+    try {
+      credited = await client.getCreditList("credited", first.activityId, first.item.creditId);
+    } catch (error) {
+      failedCount += batch.length;
+      const reason = error instanceof Error ? error.message : String(error);
+      for (const { action, item } of batch) {
+        details.push(detailFromAction(action, "issueCredit", "failed", item.unitcountCent, 0, `${action.studentName} 读取已发名单失败：${reason}`, item));
       }
-      const ok = await client.sendCredit(itemActivityId, item.creditId, [userId]);
-      if (ok) {
-        issueSuccessCount += 1;
+      onEvent?.(`${first.item.activityName || first.action.activityName} 读取 ${first.item.creditType} 已发名单失败：${reason}`);
+      continue;
+    }
+    const creditedKeys = new Set(credited.flatMap(rowIdentityKeys));
+    const pending = batch.filter(({ action }) => !actionIdentityKeys(action).some((key) => creditedKeys.has(key)));
+    const skipped = batch.filter(({ action }) => actionIdentityKeys(action).some((key) => creditedKeys.has(key)));
+    skippedAlreadyIssuedCount += skipped.length;
+    for (const { action, item } of skipped) {
+      const message = `${action.studentName} 已发放 ${item.creditType}，跳过`;
+      details.push(detailFromAction(action, "issueCredit", "skipped", item.unitcountCent, 0, message, item));
+    }
+    if (pending.length === 0) {
+      continue;
+    }
+    const userIds = uniqueStrings(pending.map((entry) => entry.userId));
+    const activityName = first.item.activityName || first.action.activityName;
+    onEvent?.(`开始为 ${activityName} 发放 ${first.item.creditType} ${pending.length} 人`);
+    try {
+      const ok = await client.sendCredit(first.activityId, first.item.creditId, userIds);
+      if (!ok) {
+        throw new Error("代理返回发放失败");
+      }
+      issueSuccessCount += pending.length;
+      for (const { action, item } of pending) {
         const message = `已为 ${action.studentName} 发放 ${item.creditType}`;
         details.push(detailFromAction(action, "issueCredit", "success", item.unitcountCent, item.unitcountCent, message, item));
-        onEvent?.(message);
-      } else {
-        failedCount += 1;
-        details.push(detailFromAction(action, "issueCredit", "failed", item.unitcountCent, 0, `${action.studentName} 发放 ${item.creditType} 失败`, item));
       }
+      onEvent?.(`已为 ${activityName} 发放 ${first.item.creditType} ${pending.length} 人`);
+    } catch (error) {
+      failedCount += pending.length;
+      const reason = error instanceof Error ? error.message : String(error);
+      for (const { action, item } of pending) {
+        details.push(detailFromAction(action, "issueCredit", "failed", item.unitcountCent, 0, `${action.studentName} 发放 ${item.creditType} 失败：${reason}`, item));
+      }
+      onEvent?.(`${activityName} 发放 ${first.item.creditType} 失败：${reason}`);
     }
   }
 
@@ -287,6 +360,17 @@ function groupByActivity(actions: OperationAction[]): Map<string, OperationActio
     const existing = groups.get(action.activityId) ?? [];
     existing.push(action);
     groups.set(action.activityId, existing);
+  }
+  return groups;
+}
+
+function groupBy<T>(values: T[], keyFromValue: (value: T) => string): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const value of values) {
+    const key = keyFromValue(value);
+    const existing = groups.get(key) ?? [];
+    existing.push(value);
+    groups.set(key, existing);
   }
   return groups;
 }

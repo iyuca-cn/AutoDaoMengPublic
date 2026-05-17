@@ -37,15 +37,15 @@ export class TaskRunner {
       await events.flush();
       const completed = await this.store.update("tasks", task.id, (storedTask) => ({
         ...storedTask,
-        status: "completed",
+        status: result.failedCount > 0 ? "failed" : "completed",
         updatedAt: new Date().toISOString(),
         result,
-        events: [...storedTask.events, { time: new Date().toISOString(), level: "info", message: "任务执行完成" }],
+        events: [...storedTask.events, { time: new Date().toISOString(), level: result.failedCount > 0 ? "warning" : "info", message: result.failedCount > 0 ? "任务执行结束，存在未完成项" : "任务执行完成" }],
       }));
       onTask?.(completed);
       await this.store.update("plans", plan.id, (storedPlan) => ({
         ...storedPlan,
-        status: "completed",
+        status: result.failedCount > 0 ? "failed" : "completed",
         auditLogs: [...storedPlan.auditLogs, createAuditLog("plan.execution.completed", { taskId: task.id }, "system")],
       }));
       return completed;

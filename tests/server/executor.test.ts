@@ -36,6 +36,15 @@ describe("credit plan executor", () => {
       }),
     ]);
   });
+
+  it("issues the same activity credit item in one batch", async () => {
+    const calls: string[] = [];
+
+    const result = await executePlan(fakeClient(calls), planWithTwoAssignments());
+
+    expect(calls).toContain("send:credit-1:user-1,user-2");
+    expect(result.issueSuccessCount).toBe(2);
+  });
 });
 
 function fakeClient(calls: string[], options: { signRows?: unknown[] } = {}): ExecutorClient {
@@ -49,7 +58,7 @@ function fakeClient(calls: string[], options: { signRows?: unknown[] } = {}): Ex
       return [];
     },
     sendCredit: async (_activityId, creditId, userIds) => {
-      calls.push(`send:${creditId}:${userIds[0]}`);
+      calls.push(`send:${creditId}:${userIds.join(",")}`);
       return true;
     },
   };
@@ -129,4 +138,31 @@ function plan(overrides: { userId?: string } = {}): Plan {
     },
     auditLogs: [],
   };
+}
+
+function planWithTwoAssignments(): Plan {
+  const base = plan();
+  base.demands.push({
+    studentId: "20250002",
+    studentName: "李四",
+    creditType: "美育实践学分",
+    requestedValueCent: 50,
+  });
+  base.allocations.push({
+    demand: {
+      studentId: "20250002",
+      studentName: "李四",
+      creditType: "美育实践学分",
+      requestedValueCent: 50,
+    },
+    assignments: [{
+      bundle: base.allocations[0].assignments[0].bundle,
+      signUpId: "signup-2",
+      userId: "user-2",
+    }],
+    plannedValueCent: 50,
+    deltaCent: 0,
+    enabled: true,
+  });
+  return base;
 }
