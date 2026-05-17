@@ -59,7 +59,7 @@ export async function handleTaskRoutes(request: Request, context: RouteContext):
       send({ type: "completed", message: "计划执行结束", data: task });
     });
   }
-  if (parts[0] === "api" && parts[1] === "tasks" && parts[2] && request.method === "GET") {
+  if (parts[0] === "api" && parts[1] === "tasks" && parts[2] && parts.length === 3 && request.method === "GET") {
     const task = await context.store.read("tasks", parts[2]);
     if (!task) {
       throw new HttpError("任务不存在", 404, "TASK_NOT_FOUND");

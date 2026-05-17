@@ -1,4 +1,5 @@
 import { CREDIT_LIST_URLS, SIGN_TYPES, type BundleCandidate, type DemandAllocation, type ExecutionDetail, type ExecutionSummary, type Plan } from "./models";
+import { summarizeExecutionDetails, verifyExecutionDetails } from "./executionVerifier";
 
 export interface ExecutorClient {
   getSignCard(activityId: string): Promise<string | null>;
@@ -201,14 +202,9 @@ export async function executePlan(client: ExecutorClient, plan: Plan, onEvent?: 
     }
   }
 
-  return {
-    resignSuccessCount,
-    issueSuccessCount,
-    abandonSuccessCount: 0,
-    skippedAlreadyIssuedCount,
-    failedCount,
-    details,
-  };
+  onEvent?.("开始执行后校验");
+  const verifiedDetails = await verifyExecutionDetails(client, details, onEvent);
+  return summarizeExecutionDetails(verifiedDetails);
 }
 
 function assignmentKey(allocation: DemandAllocation, assignment: BundleCandidate): string {

@@ -9,6 +9,7 @@ import {
   type OperationPrecheckIssue,
   type OperationPrecheckReport,
 } from "./models";
+import { summarizeExecutionDetails, verifyExecutionDetails } from "./executionVerifier";
 import { buildOperationPlanSummary } from "./operationPlans";
 
 export interface OperationExecutorClient {
@@ -278,14 +279,9 @@ export async function executeOperationPlan(client: OperationExecutorClient, plan
     }
   }
 
-  return {
-    resignSuccessCount,
-    issueSuccessCount,
-    abandonSuccessCount,
-    skippedAlreadyIssuedCount,
-    failedCount,
-    details,
-  };
+  onEvent?.("开始执行后校验");
+  const verifiedDetails = await verifyExecutionDetails(client, details, onEvent);
+  return summarizeExecutionDetails(verifiedDetails);
 }
 
 function detailFromAction(

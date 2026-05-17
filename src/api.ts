@@ -159,6 +159,22 @@ export function downloadUrl(path: string): string {
   return resolveApiUrl(withUserTimeZoneQuery(path));
 }
 
+export async function downloadFile(path: string, fallbackFilename: string): Promise<void> {
+  const response = await apiFetch(withUserTimeZoneQuery(path));
+  if (!response.ok) {
+    await readResponse<never>(response, path);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filenameFromDisposition(response.headers.get("content-disposition")) || fallbackFilename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function resolveApiUrl(path: string, location: LocationLike | undefined = currentLocation()): string {
   if (/^https?:\/\//i.test(path)) {
     return path;
@@ -172,6 +188,21 @@ export function resolveApiUrl(path: string, location: LocationLike | undefined =
     return `${DEFAULT_LOCAL_API_ORIGIN}${normalizedPath}`;
   }
   return normalizedPath;
+}
+
+function filenameFromDisposition(value: string | null): string {
+  if (!value) {
+    return "";
+  }
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(value)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      return encoded;
+    }
+  }
+  return /filename="?([^";]+)"?/i.exec(value)?.[1] ?? "";
 }
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {

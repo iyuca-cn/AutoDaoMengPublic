@@ -45,13 +45,27 @@
         <div v-if="task" class="panel p-4">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <h3 class="font-semibold">任务 {{ task.id }}</h3>
-            <a class="text-button" :href="downloadUrl(`/api/tasks/${task.id}/reports/execution.xlsx`)">
+            <button class="text-button" type="button" :disabled="downloadingTaskId === task.id" @click="downloadExecutionReport(task)">
               <Download class="h-4 w-4" />
               导出个人执行明细
-            </a>
+            </button>
           </div>
           <ExecutionResults class="mt-4" :task="task" />
           <ExecutionProgress class="mt-4" :task="task" />
+        </div>
+        <div v-if="lastFailedTask && !task" class="panel p-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 class="font-semibold">上次失败任务 {{ lastFailedTask.id }}</h3>
+              <p class="mt-1 text-sm text-slate-600">可导出已完成详情，以及计划中剩余未完成部分。</p>
+            </div>
+            <button class="text-button" type="button" :disabled="downloadingTaskId === lastFailedTask.id" @click="downloadExecutionReport(lastFailedTask)">
+              <Download class="h-4 w-4" />
+              导出失败计划详情
+            </button>
+          </div>
+          <ExecutionResults class="mt-4" :task="lastFailedTask" />
+          <ExecutionProgress class="mt-4" :task="lastFailedTask" />
         </div>
       </article>
     </div>
@@ -61,7 +75,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { Download, PlayCircle, RefreshCw, ShieldCheck } from "lucide-vue-next";
-import { apiGet, apiStream, downloadUrl } from "../api";
+import { apiGet, apiStream, downloadFile } from "../api";
 import ExecutionPrecheck from "../components/ExecutionPrecheck.vue";
 import ExecutionProgress from "../components/ExecutionProgress.vue";
 import ExecutionResults from "../components/ExecutionResults.vue";
@@ -69,11 +83,13 @@ import type { ApiStreamEvent, ExecutionTask, OperationPlan, Plan } from "../type
 
 const plans = ref<Plan[]>([]);
 const operationPlans = ref<OperationPlan[]>([]);
+const tasks = ref<ExecutionTask[]>([]);
 const selectedPlanId = ref("");
 const precheck = ref<{ executable: boolean; actionCount: number; issues: Array<{ level: string; code: string; message: string }> } | null>(null);
 const precheckedPlanKey = ref("");
 const task = ref<ExecutionTask | null>(null);
 const running = ref(false);
+const downloadingTaskId = ref("");
 const error = ref("");
 const streamMessages = ref<string[]>([]);
 
@@ -89,6 +105,15 @@ const executablePlans = computed<ExecutablePlanOption[]>(() => [
     .map((plan) => ({ key: `operation:${plan.id}`, id: plan.id, type: "operation" as const, label: `操作 · ${plan.name}`, status: plan.status })),
 ]);
 const selectedPlan = computed(() => executablePlans.value.find((plan) => plan.key === selectedPlanId.value) ?? null);
+const lastFailedTask = computed(() => {
+  const plan = selectedPlan.value;
+  if (!plan || plan.status !== "failed") {
+    return null;
+  }
+  return tasks.value
+    .filter((item) => item.status === "failed" && (item.targetId ?? item.planId) === plan.id && taskTypeMatches(item, plan.type))
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null;
+});
 const canExecute = computed(() => Boolean(
   selectedPlan.value
     && precheck.value?.executable
@@ -108,12 +133,14 @@ watch(selectedPlanId, () => {
 async function load() {
   error.value = "";
   try {
-    const [credit, operation] = await Promise.all([
+    const [credit, operation, allTasks] = await Promise.all([
       apiGet<Plan[]>("/api/plans"),
       apiGet<OperationPlan[]>("/api/operation-plans"),
+      apiGet<ExecutionTask[]>("/api/tasks"),
     ]);
     plans.value = credit;
     operationPlans.value = operation;
+    tasks.value = allTasks;
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err);
   }
@@ -173,6 +200,18 @@ async function execute() {
   }
 }
 
+async function downloadExecutionReport(targetTask: ExecutionTask) {
+  downloadingTaskId.value = targetTask.id;
+  error.value = "";
+  try {
+    await downloadFile(`/api/tasks/${targetTask.id}/reports/execution.xlsx`, `${targetTask.id}-execution.xlsx`);
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    downloadingTaskId.value = "";
+  }
+}
+
 function confirmExecution(plan: ExecutablePlanOption): boolean {
   const action = plan.status === "failed" ? "重新执行" : "执行";
   const firstConfirmed = window.confirm(`确认${action}「${plan.label}」？`);
@@ -191,5 +230,12 @@ function appendStreamMessage(event: ApiStreamEvent<unknown>) {
 
 function isTask(value: unknown): value is ExecutionTask {
   return typeof value === "object" && value !== null && "id" in value && "events" in value;
+}
+
+function taskTypeMatches(targetTask: ExecutionTask, type: ExecutablePlanOption["type"]): boolean {
+  if (type === "operation") {
+    return targetTask.targetType === "operationPlan";
+  }
+  return targetTask.targetType === "creditPlan" || targetTask.targetType === undefined;
 }
 </script>

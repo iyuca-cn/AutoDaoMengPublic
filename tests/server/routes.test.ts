@@ -9,7 +9,7 @@ import { JsonStore } from "../../server/storage/jsonStore";
 import { LocalApiProcessManager } from "../../server/local-api/process";
 import { DmLocalApiClient } from "../../server/local-api/client";
 import type { RouteContext } from "../../server/routes/context";
-import type { Plan } from "../../server/domain/models";
+import type { ExecutionTask, Plan } from "../../server/domain/models";
 
 const tempDirs: string[] = [];
 
@@ -194,6 +194,41 @@ describe("routes", () => {
     });
   });
 
+  it("serves execution reports as xlsx instead of task json", async () => {
+    const context = createTestContext();
+    const basePlan = creditPlan();
+    await context.store.create("plans", {
+      ...basePlan,
+      allocations: [{
+        ...basePlan.allocations[0],
+        assignments: [{
+          bundle: {
+            activityId: "activity-1",
+            activityName: "活动一",
+            creditType: "美育实践学分",
+            bundleValueCent: 50,
+            bundleCapacity: 10,
+            creditItems: [{
+              creditId: "credit-1",
+              scoreId: "score-1",
+              creditType: "美育实践学分",
+              unitcountCent: 50,
+              remainingCapacity: 10,
+            }],
+          },
+          signUpId: "signup-1",
+          userId: "user-1",
+        }],
+      }],
+    });
+    await context.store.create("tasks", executionTask());
+
+    const response = await routeRequest(new Request("http://local/api/tasks/task-1/reports/execution.xlsx"), context);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  });
+
   it("returns unauthorized for protected routes without a valid session", async () => {
     const context = createTestContext();
 
@@ -223,7 +258,7 @@ function createTestContext(): RouteContext {
     getSignList: async () => [{ signUpId: "signup-1", userId: "user-1", studentName: "张三" }],
     getCreditTypes: async () => [],
     exportMembers: async () => new ArrayBuffer(0),
-    getCreditList: async () => [],
+    getCreditList: async () => [{ signUpId: "signup-1", userId: "user-1", studentName: "张三" }],
     resign: async () => true,
     sendCredit: async () => true,
   } as unknown as DmLocalApiClient;
@@ -297,5 +332,41 @@ function creditPlan(): Plan {
       alreadyFullyIssuedCount: 0,
     },
     auditLogs: [],
+  };
+}
+
+function executionTask(): ExecutionTask {
+  return {
+    id: "task-1",
+    planId: "plan-1",
+    targetType: "creditPlan",
+    targetId: "plan-1",
+    status: "completed",
+    createdAt: "now",
+    updatedAt: "now",
+    events: [],
+    result: {
+      resignSuccessCount: 0,
+      issueSuccessCount: 1,
+      abandonSuccessCount: 0,
+      skippedAlreadyIssuedCount: 0,
+      failedCount: 0,
+      details: [{
+        studentId: "20250001",
+        studentName: "张三",
+        activityId: "activity-1",
+        activityName: "活动一",
+        signUpId: "signup-1",
+        userId: "user-1",
+        creditId: "credit-1",
+        scoreId: "score-1",
+        creditType: "美育实践学分",
+        plannedValueCent: 50,
+        actualValueCent: 50,
+        action: "issueCredit",
+        status: "success",
+        message: "已为 张三 发放 美育实践学分",
+      }],
+    },
   };
 }

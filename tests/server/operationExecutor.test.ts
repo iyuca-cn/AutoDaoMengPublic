@@ -66,7 +66,7 @@ describe("operation executor", () => {
 
   it("executes abandon credit with the credited userScoreId", async () => {
     const calls: string[] = [];
-    const client = fakeClient({ calls, credited: [{ signUpId: "signup-1", userScoreId: "user-score-1" }] });
+    const client = fakeClient({ calls, credited: [{ signUpId: "signup-1", userId: "user-1", userScoreId: "user-score-1" }], creditedAfterAbandon: [] });
 
     const result = await executeOperationPlan(client, plan("abandonCredit"));
 
@@ -77,7 +77,7 @@ describe("operation executor", () => {
 
   it("executes abandon credit when credited rows only expose user id and id", async () => {
     const calls: string[] = [];
-    const client = fakeClient({ calls, credited: [{ id: "user-score-1", userId: "user-1" }] });
+    const client = fakeClient({ calls, credited: [{ id: "user-score-1", userId: "user-1" }], creditedAfterAbandon: [] });
 
     const result = await executeOperationPlan(client, plan("abandonCredit"));
 
@@ -205,8 +205,11 @@ function plan(kind: OperationPlan["kind"], overrides: { userId?: string } = {}):
   };
 }
 
-function fakeClient(options: { signCard?: string | null; credited?: unknown[]; calls?: string[]; signRows?: unknown[] } = {}): OperationExecutorClient {
+function fakeClient(options: { signCard?: string | null; credited?: unknown[]; creditedAfterAbandon?: unknown[]; calls?: string[]; signRows?: unknown[] } = {}): OperationExecutorClient {
   const signRows = options.signRows ?? [{ signUpId: "signup-1", userId: "user-1" }];
+  let abandonCalled = false;
+  const sentByCreditKey = new Map<string, string[]>();
+  const signedByActivity = new Map<string, Set<string>>();
   return {
     getSignCard: async (activityId) => {
       options.calls?.push(`signCard:${activityId}`);
@@ -214,22 +217,44 @@ function fakeClient(options: { signCard?: string | null; credited?: unknown[]; c
     },
     getSignList: async (activityId, type) => {
       options.calls?.push(`signList:${activityId}:${type}`);
-      return type === 1 ? signRowsForActivity(signRows, activityId) : [];
+      const rows = signRowsForActivity(signRows, activityId);
+      if (type === 1) {
+        const signedIds = signedByActivity.get(activityId) ?? new Set();
+        return rows.filter((row) => !signedIds.has(signUpIdFromRow(row)));
+      }
+      if (type === 2) {
+        const signedIds = signedByActivity.get(activityId) ?? new Set();
+        return rows.filter((row) => signedIds.has(signUpIdFromRow(row)));
+      }
+      return [];
     },
     getCreditList: async (_kind, _activityId, creditId) => {
       options.calls?.push(`credited:${_activityId}:${creditId}`);
-      return options.credited ?? [];
+      if (abandonCalled && options.creditedAfterAbandon) {
+        return options.creditedAfterAbandon;
+      }
+      if (options.credited !== undefined) {
+        return options.credited;
+      }
+      return (sentByCreditKey.get(`${_activityId}:${creditId}`) ?? []).map((userId) => ({ userId }));
     },
     resign: async (activityId, signUpIds) => {
       options.calls?.push(`resign:${activityId}:${signUpIds.join(",")}`);
+      const signedIds = signedByActivity.get(activityId) ?? new Set<string>();
+      for (const signUpId of signUpIds) {
+        signedIds.add(signUpId);
+      }
+      signedByActivity.set(activityId, signedIds);
       return true;
     },
     sendCredit: async (activityId, creditId, userIds) => {
       options.calls?.push(`send:${activityId}:${creditId}:${userIds.join(",")}`);
+      sentByCreditKey.set(`${activityId}:${creditId}`, userIds);
       return true;
     },
     abandonCredit: async (activityId, creditId, userScoreIds) => {
       options.calls?.push(`abandon:${activityId}:${creditId}:${userScoreIds[0]}`);
+      abandonCalled = true;
       return true;
     },
   };
@@ -240,4 +265,11 @@ function signRowsForActivity(signRows: unknown[], activityId: string): unknown[]
   return signRows.length === 1 && activityId.endsWith("2")
     ? [{ signUpId: `signup-${suffix}`, userId: `user-${suffix}` }]
     : signRows;
+}
+
+function signUpIdFromRow(row: unknown): string {
+  if (typeof row !== "object" || row === null) {
+    return "";
+  }
+  return String((row as { signUpId?: unknown }).signUpId ?? "");
 }

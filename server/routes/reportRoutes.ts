@@ -33,7 +33,7 @@ export async function handleReportRoutes(request: Request, context: RouteContext
     if (!task) {
       throw new HttpError("任务不存在", 404, "TASK_NOT_FOUND");
     }
-    const plan = task.targetType === "operationPlan" || task.targetType === undefined
+    const plan = task.targetType === "operationPlan"
       ? await context.store.read("operation-plans", task.targetId ?? task.planId)
       : await context.store.read("plans", task.targetId ?? task.planId);
     return xlsxResponse(writeExecutionWorkbook(task, plan ?? undefined, timeContext), `${task.id}-execution.xlsx`);

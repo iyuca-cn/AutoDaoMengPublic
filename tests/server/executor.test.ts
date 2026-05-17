@@ -8,7 +8,7 @@ describe("credit plan executor", () => {
 
     await executePlan(fakeClient(calls), plan());
 
-    expect(calls).toEqual(["credited:credit-1", "send:credit-1:user-1"]);
+    expect(calls).toEqual(["credited:credit-1", "send:credit-1:user-1", "credited:credit-1"]);
     expect(calls.some((call) => call.includes("score-1"))).toBe(false);
   });
 
@@ -17,7 +17,7 @@ describe("credit plan executor", () => {
 
     await executePlan(fakeClient(calls, { signRows: [{ signUpId: "signup-1", userId: "uid-actual" }] }), plan({ userId: "机械工程学院" }));
 
-    expect(calls).toEqual(["credited:credit-1", "send:credit-1:uid-actual"]);
+    expect(calls).toEqual(["credited:credit-1", "send:credit-1:uid-actual", "credited:credit-1"]);
   });
 
   it("records per-person execution details with issued credit value", async () => {
@@ -49,16 +49,18 @@ describe("credit plan executor", () => {
 
 function fakeClient(calls: string[], options: { signRows?: unknown[] } = {}): ExecutorClient {
   const signRows = options.signRows ?? [];
+  const sentByCreditId = new Map<string, string[]>();
   return {
     getSignCard: async () => "card-1",
-    getSignList: async (_activityId, type) => type === 1 ? signRows : [],
+    getSignList: async (_activityId, type) => type === 1 ? signRows : signRows,
     resign: async () => true,
     getCreditList: async (_kind, _activityId, creditId) => {
       calls.push(`credited:${creditId}`);
-      return [];
+      return (sentByCreditId.get(creditId) ?? []).map((userId) => ({ userId }));
     },
     sendCredit: async (_activityId, creditId, userIds) => {
       calls.push(`send:${creditId}:${userIds.join(",")}`);
+      sentByCreditId.set(creditId, userIds);
       return true;
     },
   };
