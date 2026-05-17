@@ -32,7 +32,7 @@ export type AssignmentStatus = "planned" | "disabled" | "issued" | "skipped" | "
 export type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 export type SessionSource = "account" | "exportUrl";
 export type OperationKind = "resign" | "issueCredit" | "resignThenIssueCredit" | "abandonCredit";
-export type TaskTargetType = "creditPlan" | "operationPlan";
+export type TaskTargetType = "creditPlan" | "operationPlan" | "randomDrain";
 
 export interface StoredSession {
   uid: string;

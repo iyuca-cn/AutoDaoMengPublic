@@ -165,7 +165,7 @@ export interface DemandAllocation {
 export interface ExecutionTask {
   id: string;
   planId: string;
-  targetType?: "creditPlan" | "operationPlan";
+  targetType?: "creditPlan" | "operationPlan" | "randomDrain";
   targetId?: string;
   status: "pending" | "running" | "completed" | "failed" | "cancelled";
   createdAt: string;
@@ -269,6 +269,57 @@ export interface OperationPlan {
   actions: OperationAction[];
   precheck?: OperationPrecheckReport;
   summary: OperationPlanSummary;
+}
+
+export interface RandomDrainMember {
+  signUpId: string;
+  userId: string;
+  studentName: string;
+  studentId?: string;
+}
+
+export type RandomDrainSelectionStatus = "ready" | "threshold_reached" | "no_candidates" | "candidate_shortage" | "no_sign_card" | "missing_credit_item";
+
+export interface RandomDrainSelection {
+  activityId: string;
+  activityName: string;
+  creditId: string;
+  scoreId: string;
+  creditType?: SupportedCreditType;
+  unitcountCent: number;
+  totalCapacity: number;
+  providedCount: number;
+  thresholdPercent: number;
+  baseTargetCount: number;
+  jitterOffset: number;
+  finalTargetCount: number;
+  candidateCount: number;
+  plannedIssueCount: number;
+  status: RandomDrainSelectionStatus;
+  note: string;
+  selectedMembers: RandomDrainMember[];
+}
+
+export interface RandomDrainActivityBatch {
+  activityId: string;
+  activityName: string;
+  selections: RandomDrainSelection[];
+  plannedIssueCount: number;
+}
+
+export interface RandomDrainBatch {
+  id: string;
+  createdAt: string;
+  thresholdPercent: number;
+  jitterCount: number;
+  activities: RandomDrainActivityBatch[];
+  selectedItems: Array<{ activityId: string; creditId: string }>;
+  summary: {
+    activityCount: number;
+    creditItemCount: number;
+    plannedIssueCount: number;
+    skippedCount: number;
+  };
 }
 
 export function formatCent(value: number | null | undefined): string {

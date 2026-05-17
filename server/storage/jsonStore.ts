@@ -1,14 +1,16 @@
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { AuditLogEntry, ExecutionTask, ImportBatch, OperationPlan, Plan, StoredSession } from "../domain/models";
+import type { RandomDrainBatch } from "../domain/randomDrain";
 
-type CollectionName = "imports" | "plans" | "tasks" | "operation-plans";
-type StoredEntity = ImportBatch | Plan | ExecutionTask | OperationPlan;
+type CollectionName = "imports" | "plans" | "tasks" | "operation-plans" | "random-drain-batches";
+type StoredEntity = ImportBatch | Plan | ExecutionTask | OperationPlan | RandomDrainBatch;
 type EntityMap = {
   imports: ImportBatch;
   plans: Plan;
   tasks: ExecutionTask;
   "operation-plans": OperationPlan;
+  "random-drain-batches": RandomDrainBatch;
 };
 
 export class JsonStore {

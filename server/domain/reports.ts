@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { formatCreditCent, type ExecutionDetail, type ExecutionTask, type OperationPlan, type Plan } from "./models";
+import type { RandomDrainBatch } from "./randomDrain";
 import { formatUserDateTime, type UserTimeContext } from "./time";
 
 const DEFAULT_TIME_CONTEXT: UserTimeContext = { timeZone: "UTC" };
@@ -53,7 +54,7 @@ export function writeOperationPlanDetailWorkbook(plan: OperationPlan, timeContex
   return workbookToArrayBuffer(workbook);
 }
 
-export function writeExecutionWorkbook(task: ExecutionTask, plan?: Plan | OperationPlan, timeContext: UserTimeContext = DEFAULT_TIME_CONTEXT): ArrayBuffer {
+export function writeExecutionWorkbook(task: ExecutionTask, plan?: Plan | OperationPlan | RandomDrainBatch, timeContext: UserTimeContext = DEFAULT_TIME_CONTEXT): ArrayBuffer {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(executionDetailRows(task.result?.details ?? [])), "个人执行明细");
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([
@@ -71,6 +72,65 @@ export function writeExecutionWorkbook(task: ExecutionTask, plan?: Plan | Operat
     },
   ]), "执行摘要");
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(unfinishedRows(plan, task.result?.details ?? [])), "剩余未完成明细");
+  return workbookToArrayBuffer(workbook);
+}
+
+export function writeRandomDrainWorkbook(batch: RandomDrainBatch, timeContext: UserTimeContext = DEFAULT_TIME_CONTEXT): ArrayBuffer {
+  const workbook = XLSX.utils.book_new();
+  const summaryRows = batch.activities.flatMap((activity) => activity.selections.map((selection) => ({
+    "批次ID": batch.id,
+    "创建时间": formatUserDateTime(batch.createdAt, timeContext),
+    "活动ID": selection.activityId,
+    "活动名称": selection.activityName,
+    "活动可发学分ID": selection.creditId,
+    "分数项ID": selection.scoreId,
+    "学分类型": selection.creditType ?? "",
+    "单项学分": selection.unitcountCent ? formatCreditCent(selection.unitcountCent) : "",
+    "总名额": selection.totalCapacity,
+    "执行前已发放": selection.providedCount,
+    "阈值百分比": selection.thresholdPercent,
+    "基础目标人数": selection.baseTargetCount,
+    "随机偏移人数": selection.jitterOffset,
+    "最终目标人数": selection.finalTargetCount,
+    "候选人数": selection.candidateCount,
+    "本次计划发放": selection.plannedIssueCount,
+    "状态": randomDrainStatusLabel(selection.status),
+    "说明": selection.note,
+  })));
+  const detailRows = batch.activities.flatMap((activity) => activity.selections.flatMap((selection) => {
+    if (selection.selectedMembers.length === 0) {
+      return [{
+        "活动ID": selection.activityId,
+        "活动名称": selection.activityName,
+        "活动可发学分ID": selection.creditId,
+        "分数项ID": selection.scoreId,
+        "学分类型": selection.creditType ?? "",
+        "学号": "",
+        "姓名": "",
+        "报名ID": "",
+        "用户ID": "",
+        "计划处理学分": selection.unitcountCent ? formatCreditCent(selection.unitcountCent) : "",
+        "状态": randomDrainStatusLabel(selection.status),
+        "说明": selection.note || "本学分包无计划发放人员",
+      }];
+    }
+    return selection.selectedMembers.map((member) => ({
+      "活动ID": selection.activityId,
+      "活动名称": selection.activityName,
+      "活动可发学分ID": selection.creditId,
+      "分数项ID": selection.scoreId,
+      "学分类型": selection.creditType ?? "",
+      "学号": member.studentId ?? "",
+      "姓名": member.studentName,
+      "报名ID": member.signUpId,
+      "用户ID": member.userId,
+      "计划处理学分": formatCreditCent(selection.unitcountCent),
+      "状态": "待执行",
+      "说明": "",
+    }));
+  }));
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), "随机消耗摘要");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(detailRows), "计划人员明细");
   return workbookToArrayBuffer(workbook);
 }
 
@@ -250,7 +310,7 @@ interface PlannedExecutionItem {
   action: ExecutionDetail["action"];
 }
 
-function unfinishedRows(plan: Plan | OperationPlan | undefined, details: ExecutionDetail[]): Array<Record<string, string | number>> {
+function unfinishedRows(plan: Plan | OperationPlan | RandomDrainBatch | undefined, details: ExecutionDetail[]): Array<Record<string, string | number>> {
   if (!plan) {
     return [{
       "学号": "",
@@ -308,8 +368,14 @@ function unfinishedRows(plan: Plan | OperationPlan | undefined, details: Executi
   return rows;
 }
 
-function plannedItems(plan: Plan | OperationPlan): PlannedExecutionItem[] {
-  return "allocations" in plan ? plannedCreditItems(plan) : plannedOperationItems(plan);
+function plannedItems(plan: Plan | OperationPlan | RandomDrainBatch): PlannedExecutionItem[] {
+  if ("allocations" in plan) {
+    return plannedCreditItems(plan);
+  }
+  if ("actions" in plan) {
+    return plannedOperationItems(plan);
+  }
+  return plannedRandomDrainItems(plan);
 }
 
 function plannedCreditItems(plan: Plan): PlannedExecutionItem[] {
@@ -365,6 +431,22 @@ function plannedOperationItems(plan: OperationPlan): PlannedExecutionItem[] {
     });
     return [...resignItems, ...creditItems];
   });
+}
+
+function plannedRandomDrainItems(batch: RandomDrainBatch): PlannedExecutionItem[] {
+  return batch.activities.flatMap((activity) => activity.selections.flatMap((selection) => selection.selectedMembers.map((member) => ({
+    studentId: member.studentId,
+    studentName: member.studentName,
+    activityId: activity.activityId,
+    activityName: activity.activityName,
+    signUpId: member.signUpId,
+    userId: member.userId,
+    creditId: selection.creditId,
+    scoreId: selection.scoreId,
+    creditType: selection.creditType,
+    plannedValueCent: selection.unitcountCent,
+    action: "issueCredit" as const,
+  }))));
 }
 
 function plannedItemKey(item: PlannedExecutionItem): string {
@@ -480,6 +562,18 @@ function detailStatusLabel(status: ExecutionDetail["status"]): string {
     failed: "失败",
   };
   return labels[status];
+}
+
+function randomDrainStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    ready: "待执行",
+    threshold_reached: "已达阈值",
+    no_candidates: "无候选人",
+    candidate_shortage: "候选不足",
+    no_sign_card: "无签到卡",
+    missing_credit_item: "学分包不存在",
+  };
+  return labels[status] ?? status;
 }
 
 function workbookToArrayBuffer(workbook: XLSX.WorkBook): ArrayBuffer {

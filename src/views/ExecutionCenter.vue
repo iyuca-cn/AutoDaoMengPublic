@@ -67,6 +67,41 @@
           <ExecutionResults class="mt-4" :task="lastFailedTask" />
           <ExecutionProgress class="mt-4" :task="lastFailedTask" />
         </div>
+        <div v-if="selectedPlanTasks.length > 0" class="panel overflow-hidden">
+          <div class="border-b border-line p-4">
+            <h3 class="font-semibold">历史执行任务</h3>
+            <p class="mt-1 text-sm text-slate-600">刷新后仍可导出成功、失败和执行中断任务的个人明细。</p>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="min-w-full text-left text-sm">
+              <thead class="bg-paper text-xs text-slate-500">
+                <tr>
+                  <th class="px-3 py-2">任务</th>
+                  <th class="px-3 py-2">状态</th>
+                  <th class="px-3 py-2">更新时间</th>
+                  <th class="px-3 py-2">成功/失败</th>
+                  <th class="px-3 py-2">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in selectedPlanTasks" :key="item.id" class="border-t border-line">
+                  <td class="px-3 py-2 font-mono text-xs">{{ item.id }}</td>
+                  <td class="px-3 py-2">{{ item.status }}</td>
+                  <td class="px-3 py-2">{{ formatUserDateTime(item.updatedAt) }}</td>
+                  <td class="px-3 py-2">
+                    发放 {{ item.result?.issueSuccessCount ?? 0 }}，补签 {{ item.result?.resignSuccessCount ?? 0 }}，撤销 {{ item.result?.abandonSuccessCount ?? 0 }}，失败 {{ item.result?.failedCount ?? 0 }}
+                  </td>
+                  <td class="px-3 py-2">
+                    <button class="text-button" type="button" :disabled="downloadingTaskId === item.id" @click="downloadExecutionReport(item)">
+                      <Download class="h-4 w-4" />
+                      导出
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </article>
     </div>
   </section>
@@ -79,6 +114,7 @@ import { apiGet, apiStream, downloadFile } from "../api";
 import ExecutionPrecheck from "../components/ExecutionPrecheck.vue";
 import ExecutionProgress from "../components/ExecutionProgress.vue";
 import ExecutionResults from "../components/ExecutionResults.vue";
+import { formatUserDateTime } from "../time";
 import type { ApiStreamEvent, ExecutionTask, OperationPlan, Plan } from "../types";
 
 const plans = ref<Plan[]>([]);
@@ -113,6 +149,15 @@ const lastFailedTask = computed(() => {
   return tasks.value
     .filter((item) => item.status === "failed" && (item.targetId ?? item.planId) === plan.id && taskTypeMatches(item, plan.type))
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null;
+});
+const selectedPlanTasks = computed(() => {
+  const plan = selectedPlan.value;
+  if (!plan) {
+    return [];
+  }
+  return tasks.value
+    .filter((item) => (item.targetId ?? item.planId) === plan.id && taskTypeMatches(item, plan.type))
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 });
 const canExecute = computed(() => Boolean(
   selectedPlan.value
