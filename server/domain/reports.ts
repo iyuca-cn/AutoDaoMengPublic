@@ -55,6 +55,7 @@ export function writeOperationPlanDetailWorkbook(plan: OperationPlan, timeContex
 
 export function writeExecutionWorkbook(task: ExecutionTask, plan?: Plan | OperationPlan, timeContext: UserTimeContext = DEFAULT_TIME_CONTEXT): ArrayBuffer {
   const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(executionDetailRows(task.result?.details ?? [])), "个人执行明细");
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([
     {
       "任务ID": task.id,
@@ -69,7 +70,6 @@ export function writeExecutionWorkbook(task: ExecutionTask, plan?: Plan | Operat
       "失败": task.result?.failedCount ?? 0,
     },
   ]), "执行摘要");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(executionDetailRows(task.result?.details ?? [])), "个人执行明细");
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(unfinishedRows(plan, task.result?.details ?? [])), "剩余未完成明细");
   return workbookToArrayBuffer(workbook);
 }
@@ -218,26 +218,22 @@ function executionDetailRows(details: ExecutionDetail[]): Array<Record<string, s
       "说明": "暂无个人级执行明细",
     }];
   }
-  return groupRowsByPerson(details.map((detail) => ({
-    studentId: detail.studentId ?? "",
-    studentName: detail.studentName,
-    requestedValueCent: 0,
-    plannedValueCent: detail.plannedValueCent,
-    actualValueCent: detail.actualValueCent,
-    activity: detail.activityName,
-    creditType: detail.creditType ?? "",
-    detail: [
-      `${detail.activityName} ${actionLabel(detail.action)} ${detail.creditType ?? ""}`.trim(),
-      `状态 ${detailStatusLabel(detail.status)}`,
-      `计划 ${formatCreditCent(detail.plannedValueCent)}`,
-      `实际 ${formatCreditCent(detail.actualValueCent)}`,
-      detail.creditId ? `学分项ID ${detail.creditId}` : "",
-      detail.scoreId ? `分数项ID ${detail.scoreId}` : "",
-      detail.signUpId ? `报名ID ${detail.signUpId}` : "",
-      detail.userId ? `用户ID ${detail.userId}` : "",
-      detail.message,
-    ].filter(Boolean).join("；"),
-  })));
+  return details.map((detail) => ({
+    "学号": detail.studentId ?? "",
+    "姓名": detail.studentName,
+    "活动ID": detail.activityId,
+    "活动名称": detail.activityName,
+    "动作": actionLabel(detail.action),
+    "状态": detailStatusLabel(detail.status),
+    "报名ID": detail.signUpId ?? "",
+    "用户ID": detail.userId ?? "",
+    "活动可发学分ID": detail.creditId ?? "",
+    "分数项ID": detail.scoreId ?? "",
+    "学分类型": detail.creditType ?? "",
+    "计划处理学分": formatCreditCent(detail.plannedValueCent),
+    "实际处理学分": formatCreditCent(detail.actualValueCent),
+    "说明": detail.message,
+  }));
 }
 
 interface PlannedExecutionItem {

@@ -22,21 +22,37 @@ describe("reports", () => {
     expect(String(rows[0]["明细说明"])).toContain("活动二");
   });
 
-  it("exports execution details with one row per person and actual credit value total", () => {
+  it("exports execution details with one row per execution record", () => {
     const sheets = readWorkbook(writeExecutionWorkbook(task(), plan()));
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheets.Sheets["个人执行明细"]);
 
+    expect(sheets.SheetNames[0]).toBe("个人执行明细");
     expect(sheets.SheetNames).toContain("个人执行明细");
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({
       "学号": "20250001",
       "姓名": "张三",
-      "计划处理学分合计": "1.00",
-      "实际处理学分合计": "1.00",
-      "活动汇总": "活动一；活动二",
+      "活动ID": "activity-1",
+      "活动名称": "活动一",
+      "动作": "发放学分",
+      "状态": "成功",
+      "报名ID": "signup-activity-1",
+      "用户ID": "user-1",
+      "活动可发学分ID": "credit-1",
+      "分数项ID": "score-1",
+      "学分类型": "美育实践学分",
+      "计划处理学分": "0.50",
+      "实际处理学分": "0.50",
     });
-    expect(String(rows[0]["明细说明"])).toContain("活动一");
-    expect(String(rows[0]["明细说明"])).toContain("活动二");
+    expect(rows[1]).toMatchObject({
+      "学号": "20250001",
+      "姓名": "张三",
+      "活动ID": "activity-2",
+      "活动名称": "活动二",
+      "学分类型": "思想成长学分",
+      "计划处理学分": "0.50",
+      "实际处理学分": "0.50",
+    });
   });
 
   it("exports unfinished rows for failed execution tasks", () => {
