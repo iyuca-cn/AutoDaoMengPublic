@@ -1,0 +1,43 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { apiGet, downloadUrl, resolveApiUrl } from "../../src/api";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+describe("frontend api helper", () => {
+  it("uses the Bun backend origin for local Vite pages", () => {
+    expect(resolveApiUrl("/api/imports", {
+      protocol: "http:",
+      hostname: "127.0.0.1",
+      port: "5173",
+    })).toBe("http://127.0.0.1:5174/api/imports");
+  });
+
+  it("keeps relative urls when already on the Bun backend origin", () => {
+    expect(resolveApiUrl("/api/imports", {
+      protocol: "http:",
+      hostname: "127.0.0.1",
+      port: "5174",
+    })).toBe("/api/imports");
+  });
+
+  it("uses the resolved API url for downloads", () => {
+    vi.stubGlobal("window", {
+      location: {
+        protocol: "http:",
+        hostname: "127.0.0.1",
+        port: "5173",
+      },
+    });
+
+    expect(downloadUrl("/api/reports/plan.xlsx")).toBe("http://127.0.0.1:5174/api/reports/plan.xlsx");
+  });
+
+  it("reports a clear backend connection error when fetch fails", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    await expect(apiGet("/api/imports")).rejects.toThrow("无法连接后端接口");
+  });
+});

@@ -15,14 +15,21 @@ export interface ApiUnauthorizedEventDetail {
 }
 
 export const API_UNAUTHORIZED_EVENT = "daomeng:api-unauthorized";
+const DEFAULT_LOCAL_API_ORIGIN = "http://127.0.0.1:5174";
+
+interface LocationLike {
+  protocol: string;
+  hostname: string;
+  port?: string;
+}
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(path);
+  const response = await apiFetch(path);
   return readResponse<T>(response, path);
 }
 
 export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(path, {
+  const response = await apiFetch(path, {
     method: "POST",
     headers: body instanceof FormData ? undefined : { "content-type": "application/json" },
     body: body instanceof FormData ? body : JSON.stringify(body ?? {}),
@@ -31,7 +38,7 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
 }
 
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(path, {
+  const response = await apiFetch(path, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -40,7 +47,7 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function apiDelete<T>(path: string): Promise<T> {
-  const response = await fetch(path, {
+  const response = await apiFetch(path, {
     method: "DELETE",
   });
   return readResponse<T>(response, path);
@@ -54,7 +61,7 @@ export interface ApiStreamOptions<T> {
 }
 
 export async function apiStream<T>(path: string, options: ApiStreamOptions<T> = {}): Promise<T> {
-  const response = await fetch(path, {
+  const response = await apiFetch(path, {
     method: options.method ?? (options.body === undefined ? "GET" : "POST"),
     headers: options.body === undefined ? undefined : { "content-type": "application/json" },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
@@ -147,5 +154,50 @@ async function readResponse<T>(response: Response, path: string): Promise<T> {
 }
 
 export function downloadUrl(path: string): string {
-  return path;
+  return resolveApiUrl(path);
+}
+
+export function resolveApiUrl(path: string, location: LocationLike | undefined = currentLocation()): string {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const configuredBaseUrl = configuredApiBaseUrl();
+  if (configuredBaseUrl) {
+    return `${configuredBaseUrl}${normalizedPath}`;
+  }
+  if (location && isLocalLocation(location) && location.port !== "5174") {
+    return `${DEFAULT_LOCAL_API_ORIGIN}${normalizedPath}`;
+  }
+  return normalizedPath;
+}
+
+async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  const url = resolveApiUrl(path);
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    throw toNetworkError(error, url);
+  }
+}
+
+function configuredApiBaseUrl(): string {
+  const value = import.meta.env.VITE_API_BASE_URL?.trim();
+  return value ? value.replace(/\/+$/, "") : "";
+}
+
+function currentLocation(): LocationLike | undefined {
+  return typeof window === "undefined" ? undefined : window.location;
+}
+
+function isLocalLocation(location: LocationLike): boolean {
+  const hostname = location.hostname.toLowerCase();
+  return location.protocol === "file:" || hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
+}
+
+function toNetworkError(error: unknown, url: string): Error {
+  if (error instanceof TypeError && /fetch/i.test(error.message)) {
+    return new Error(`无法连接后端接口（${url}）。请确认 Bun 后端已启动，并且端口 5174 可访问。`);
+  }
+  return error instanceof Error ? error : new Error(String(error));
 }
