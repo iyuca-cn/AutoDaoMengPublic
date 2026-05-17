@@ -47,7 +47,7 @@
             <h3 class="font-semibold">任务 {{ task.id }}</h3>
             <a class="text-button" :href="downloadUrl(`/api/tasks/${task.id}/reports/execution.xlsx`)">
               <Download class="h-4 w-4" />
-              导出结果
+              导出个人执行明细
             </a>
           </div>
           <ExecutionResults class="mt-4" :task="task" />

@@ -9,6 +9,7 @@ import { JsonStore } from "../../server/storage/jsonStore";
 import { LocalApiProcessManager } from "../../server/local-api/process";
 import { DmLocalApiClient } from "../../server/local-api/client";
 import type { RouteContext } from "../../server/routes/context";
+import type { Plan } from "../../server/domain/models";
 
 const tempDirs: string[] = [];
 
@@ -172,6 +173,27 @@ describe("routes", () => {
     expect(readDeleted.status).toBe(404);
   });
 
+  it("patches credit plan names and moves drafts to ready", async () => {
+    const context = createTestContext();
+    await context.store.create("plans", creditPlan());
+
+    const response = await routeRequest(jsonRequest("http://local/api/plans/plan-1", {
+      name: "新学分计划",
+      allocations: [],
+    }, "PATCH"), context);
+    const body = await response.json() as { data: Plan };
+
+    expect(response.status).toBe(200);
+    expect(body.data).toMatchObject({
+      name: "新学分计划",
+      status: "ready",
+      summary: {
+        demandCount: 0,
+        plannedIssueCount: 0,
+      },
+    });
+  });
+
   it("returns unauthorized for protected routes without a valid session", async () => {
     const context = createTestContext();
 
@@ -224,10 +246,56 @@ function parseNdjson(text: string): Array<{ type: string; code?: string; data?: 
     .map((line) => JSON.parse(line) as { type: string; code?: string; data?: { activityId?: string } });
 }
 
-function jsonRequest(url: string, body: unknown): Request {
+function jsonRequest(url: string, body: unknown, method = "POST"): Request {
   return new Request(url, {
-    method: "POST",
+    method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+function creditPlan(): Plan {
+  return {
+    id: "plan-1",
+    name: "旧学分计划",
+    sourceImportId: "import-1",
+    generatedAt: "now",
+    status: "draft",
+    demands: [{
+      studentId: "20250001",
+      studentName: "张三",
+      creditType: "美育实践学分",
+      requestedValueCent: 50,
+    }],
+    activities: [],
+    allocations: [{
+      demand: {
+        studentId: "20250001",
+        studentName: "张三",
+        creditType: "美育实践学分",
+        requestedValueCent: 50,
+      },
+      assignments: [],
+      plannedValueCent: 0,
+      deltaCent: -50,
+      enabled: true,
+    }],
+    preissued: {
+      alreadyPartiallyIssued: [],
+      alreadyFullyIssued: [],
+    },
+    notInAdmitList: [],
+    summary: {
+      demandCount: 1,
+      studentCount: 1,
+      activityCount: 0,
+      plannedIssueCount: 0,
+      notInAdmitCount: 0,
+      underIssuedCount: 1,
+      overIssuedCount: 0,
+      alreadyPartiallyIssuedCount: 0,
+      alreadyFullyIssuedCount: 0,
+    },
+    auditLogs: [],
+  };
 }

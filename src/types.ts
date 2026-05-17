@@ -177,7 +177,25 @@ export interface ExecutionTask {
     abandonSuccessCount: number;
     skippedAlreadyIssuedCount: number;
     failedCount: number;
+    details?: ExecutionDetail[];
   };
+}
+
+export interface ExecutionDetail {
+  studentId?: string;
+  studentName: string;
+  activityId: string;
+  activityName: string;
+  signUpId?: string;
+  userId?: string;
+  creditId?: string;
+  scoreId?: string;
+  creditType?: SupportedCreditType;
+  plannedValueCent: number;
+  actualValueCent: number;
+  action: "resign" | "issueCredit" | "abandonCredit";
+  status: "success" | "skipped" | "failed";
+  message: string;
 }
 
 export interface ApiStreamEvent<T = unknown> {

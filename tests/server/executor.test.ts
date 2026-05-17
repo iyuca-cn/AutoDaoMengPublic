@@ -19,6 +19,23 @@ describe("credit plan executor", () => {
 
     expect(calls).toEqual(["credited:credit-1", "send:credit-1:uid-actual"]);
   });
+
+  it("records per-person execution details with issued credit value", async () => {
+    const result = await executePlan(fakeClient([]), plan());
+
+    expect(result.details).toEqual([
+      expect.objectContaining({
+        studentId: "20250001",
+        studentName: "张三",
+        activityId: "activity-1",
+        creditType: "美育实践学分",
+        plannedValueCent: 50,
+        actualValueCent: 50,
+        action: "issueCredit",
+        status: "success",
+      }),
+    ]);
+  });
 });
 
 function fakeClient(calls: string[], options: { signRows?: unknown[] } = {}): ExecutorClient {

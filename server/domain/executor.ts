@@ -1,4 +1,4 @@
-import { CREDIT_LIST_URLS, SIGN_TYPES, type ExecutionSummary, type Plan } from "./models";
+import { CREDIT_LIST_URLS, SIGN_TYPES, type BundleCandidate, type DemandAllocation, type ExecutionDetail, type ExecutionSummary, type Plan } from "./models";
 
 export interface ExecutorClient {
   getSignCard(activityId: string): Promise<string | null>;
@@ -64,6 +64,7 @@ export async function executePlan(client: ExecutorClient, plan: Plan, onEvent?: 
   let issueSuccessCount = 0;
   let skippedAlreadyIssuedCount = 0;
   let failedCount = 0;
+  const details: ExecutionDetail[] = [];
 
   const assignments = plan.allocations.flatMap((allocation) => allocation.assignments.map((assignment) => ({ allocation, assignment })));
   const userIdCache = new Map<string, Map<string, string>>();
@@ -74,7 +75,13 @@ export async function executePlan(client: ExecutorClient, plan: Plan, onEvent?: 
       const ok = await client.resign(assignment.bundle.activityId, [assignment.signUpId], false);
       if (ok) {
         resignSuccessCount += 1;
-        onEvent?.(`已为 ${allocation.demand.studentName} 补签`);
+        const message = `已为 ${allocation.demand.studentName} 补签`;
+        details.push(detailFromAssignment(allocation, assignment, "resign", "success", 0, 0, message));
+        onEvent?.(message);
+      } else {
+        failedCount += 1;
+        const message = `${allocation.demand.studentName} 补签失败`;
+        details.push(detailFromAssignment(allocation, assignment, "resign", "failed", 0, 0, message));
       }
     }
     if (isInvalidUserId(assignment.userId)) {
@@ -85,7 +92,11 @@ export async function executePlan(client: ExecutorClient, plan: Plan, onEvent?: 
     }
     if (isInvalidUserId(assignment.userId)) {
       failedCount += assignment.bundle.creditItems.length;
-      onEvent?.(`${allocation.demand.studentName} 缺少有效 userId，跳过发放`);
+      const message = `${allocation.demand.studentName} 缺少有效 userId，跳过发放`;
+      for (const creditItem of assignment.bundle.creditItems) {
+        details.push(detailFromAssignment(allocation, assignment, "issueCredit", "failed", creditItem.unitcountCent, 0, message, creditItem));
+      }
+      onEvent?.(message);
       continue;
     }
     for (const creditItem of assignment.bundle.creditItems) {
@@ -93,14 +104,18 @@ export async function executePlan(client: ExecutorClient, plan: Plan, onEvent?: 
       const creditedSignUpIds = new Set(credited.map((row) => getString(row, "signUpId")));
       if (creditedSignUpIds.has(assignment.signUpId)) {
         skippedAlreadyIssuedCount += 1;
+        details.push(detailFromAssignment(allocation, assignment, "issueCredit", "skipped", creditItem.unitcountCent, 0, `${allocation.demand.studentName} 已发放 ${creditItem.creditType}，跳过`, creditItem));
         continue;
       }
       const ok = await client.sendCredit(assignment.bundle.activityId, creditItem.creditId, [assignment.userId]);
       if (ok) {
         issueSuccessCount += 1;
-        onEvent?.(`已为 ${allocation.demand.studentName} 发放 ${creditItem.creditType}`);
+        const message = `已为 ${allocation.demand.studentName} 发放 ${creditItem.creditType}`;
+        details.push(detailFromAssignment(allocation, assignment, "issueCredit", "success", creditItem.unitcountCent, creditItem.unitcountCent, message, creditItem));
+        onEvent?.(message);
       } else {
         failedCount += 1;
+        details.push(detailFromAssignment(allocation, assignment, "issueCredit", "failed", creditItem.unitcountCent, 0, `${allocation.demand.studentName} 发放 ${creditItem.creditType} 失败`, creditItem));
       }
     }
   }
@@ -111,6 +126,35 @@ export async function executePlan(client: ExecutorClient, plan: Plan, onEvent?: 
     abandonSuccessCount: 0,
     skippedAlreadyIssuedCount,
     failedCount,
+    details,
+  };
+}
+
+function detailFromAssignment(
+  allocation: DemandAllocation,
+  assignment: BundleCandidate,
+  action: ExecutionDetail["action"],
+  status: ExecutionDetail["status"],
+  plannedValueCent: number,
+  actualValueCent: number,
+  message: string,
+  creditItem?: BundleCandidate["bundle"]["creditItems"][number],
+): ExecutionDetail {
+  return {
+    studentId: allocation.demand.studentId,
+    studentName: allocation.demand.studentName,
+    activityId: assignment.bundle.activityId,
+    activityName: assignment.bundle.activityName,
+    signUpId: assignment.signUpId,
+    userId: assignment.userId,
+    creditId: creditItem?.creditId,
+    scoreId: creditItem?.scoreId,
+    creditType: creditItem?.creditType,
+    plannedValueCent,
+    actualValueCent,
+    action,
+    status,
+    message,
   };
 }
 

@@ -21,6 +21,9 @@
       <div class="mt-1 text-xl font-semibold">{{ task.result?.failedCount ?? 0 }}</div>
     </div>
   </div>
+  <div v-if="task.result?.details?.length" class="mt-3 rounded border border-line bg-paper p-3 text-sm text-slate-600">
+    已生成 {{ task.result.details.length }} 条个人执行明细，导出文件包含每条记录的学生、活动、学分项、计划处理学分和实际处理学分。
+  </div>
 </template>
 
 <script setup lang="ts">

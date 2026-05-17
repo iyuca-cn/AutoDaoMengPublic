@@ -28,6 +28,10 @@ describe("operation executor", () => {
     expect(calls.indexOf("resign:activity-1:signup-1")).toBeLessThan(calls.indexOf("send:activity-1:credit-1:user-1"));
     expect(result.resignSuccessCount).toBe(1);
     expect(result.issueSuccessCount).toBe(1);
+    expect(result.details).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: "resign", actualValueCent: 0, status: "success" }),
+      expect.objectContaining({ action: "issueCredit", actualValueCent: 50, status: "success" }),
+    ]));
   });
 
   it("executes abandon credit with the credited userScoreId", async () => {

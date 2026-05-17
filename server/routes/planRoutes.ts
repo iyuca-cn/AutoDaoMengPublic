@@ -32,8 +32,9 @@ export async function handlePlanRoutes(request: Request, context: RouteContext):
         return {
           ...plan,
           name: body.name ?? plan.name,
-          status: body.status ?? plan.status,
+          status: body.status ?? (plan.status === "draft" ? "ready" : plan.status),
           allocations: body.allocations ?? plan.allocations,
+          summary: body.allocations ? buildPlanSummary(plan, body.allocations) : plan.summary,
           auditLogs: [...plan.auditLogs, createAuditLog("plan.updated", { fields: Object.keys(body) }, "user")],
         };
       });
@@ -41,4 +42,20 @@ export async function handlePlanRoutes(request: Request, context: RouteContext):
     }
   }
   return null;
+}
+
+function buildPlanSummary(plan: Plan, allocations: Plan["allocations"]): Plan["summary"] {
+  const enabledAllocations = allocations.filter((allocation) => allocation.enabled);
+  const activityIds = new Set(enabledAllocations.flatMap((allocation) => allocation.assignments.map((assignment) => assignment.bundle.activityId)));
+  return {
+    demandCount: enabledAllocations.length,
+    studentCount: new Set(enabledAllocations.map((allocation) => allocation.demand.studentId)).size,
+    activityCount: activityIds.size,
+    plannedIssueCount: enabledAllocations.reduce((sum, allocation) => sum + allocation.assignments.length, 0),
+    notInAdmitCount: plan.notInAdmitList.length,
+    underIssuedCount: enabledAllocations.filter((allocation) => allocation.deltaCent < 0).length,
+    overIssuedCount: enabledAllocations.filter((allocation) => allocation.deltaCent > 0).length,
+    alreadyPartiallyIssuedCount: plan.preissued.alreadyPartiallyIssued.length,
+    alreadyFullyIssuedCount: plan.preissued.alreadyFullyIssued.length,
+  };
 }

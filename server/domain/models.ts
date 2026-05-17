@@ -254,6 +254,27 @@ export interface ExecutionSummary {
   abandonSuccessCount: number;
   skippedAlreadyIssuedCount: number;
   failedCount: number;
+  details?: ExecutionDetail[];
+}
+
+export type ExecutionDetailAction = "resign" | "issueCredit" | "abandonCredit";
+export type ExecutionDetailStatus = "success" | "skipped" | "failed";
+
+export interface ExecutionDetail {
+  studentId?: string;
+  studentName: string;
+  activityId: string;
+  activityName: string;
+  signUpId?: string;
+  userId?: string;
+  creditId?: string;
+  scoreId?: string;
+  creditType?: SupportedCreditType;
+  plannedValueCent: number;
+  actualValueCent: number;
+  action: ExecutionDetailAction;
+  status: ExecutionDetailStatus;
+  message: string;
 }
 
 export interface AuditLogEntry {

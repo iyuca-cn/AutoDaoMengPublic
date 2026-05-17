@@ -1,6 +1,7 @@
 import {
   CREDIT_LIST_URLS,
   SIGN_TYPES,
+  type ExecutionDetail,
   type ActivityPersonRow,
   type ExecutionSummary,
   type OperationAction,
@@ -119,6 +120,7 @@ export async function executeOperationPlan(client: OperationExecutorClient, plan
   let abandonSuccessCount = 0;
   let skippedAlreadyIssuedCount = 0;
   let failedCount = 0;
+  const details: ExecutionDetail[] = [];
 
   for (const action of report.normalizedActions.filter((item) => item.enabled)) {
     const activityId = action.activityId || plan.activityId;
@@ -127,18 +129,23 @@ export async function executeOperationPlan(client: OperationExecutorClient, plan
       const itemActivityId = item.activityId || activityId;
       const credited = await client.getCreditList("credited", itemActivityId, item.creditId);
       const creditedRow = findCreditedRow(credited, action);
-      const userScoreId = item.userScoreId || userScoreIdFromCreditedRow(creditedRow, action.signUpId);
+        const userScoreId = item.userScoreId || userScoreIdFromCreditedRow(creditedRow, action.signUpId);
         if (!userScoreId) {
           failedCount += 1;
-          onEvent?.(`${action.studentName} 的 ${item.creditType} 缺少 userScoreId，跳过撤销`);
+          const message = `${action.studentName} 的 ${item.creditType} 缺少 userScoreId，跳过撤销`;
+          details.push(detailFromAction(action, "abandonCredit", "failed", item.unitcountCent, 0, message, item));
+          onEvent?.(message);
           continue;
         }
         const ok = await client.abandonCredit(itemActivityId, item.creditId, [userScoreId]);
         if (ok) {
           abandonSuccessCount += 1;
-          onEvent?.(`已为 ${action.studentName} 撤销 ${item.creditType}`);
+          const message = `已为 ${action.studentName} 撤销 ${item.creditType}`;
+          details.push(detailFromAction(action, "abandonCredit", "success", item.unitcountCent, item.unitcountCent, message, item));
+          onEvent?.(message);
         } else {
           failedCount += 1;
+          details.push(detailFromAction(action, "abandonCredit", "failed", item.unitcountCent, 0, `${action.studentName} 撤销 ${item.creditType} 失败`, item));
         }
       }
       continue;
@@ -151,10 +158,13 @@ export async function executeOperationPlan(client: OperationExecutorClient, plan
         const ok = await client.resign(activityId, [action.signUpId], false);
         if (ok) {
           resignSuccessCount += 1;
-          onEvent?.(`已为 ${action.studentName} 补签`);
+          const message = `已为 ${action.studentName} 补签`;
+          details.push(detailFromAction(action, "resign", "success", 0, 0, message));
+          onEvent?.(message);
         } else {
           failedCount += 1;
           canIssue = false;
+          details.push(detailFromAction(action, "resign", "failed", 0, 0, `${action.studentName} 补签失败`));
         }
       }
     }
@@ -163,7 +173,11 @@ export async function executeOperationPlan(client: OperationExecutorClient, plan
     }
     if (isInvalidUserId(action.userId)) {
       failedCount += action.creditItems.length;
-      onEvent?.(`${action.studentName} 缺少有效 userId，跳过发放`);
+      const message = `${action.studentName} 缺少有效 userId，跳过发放`;
+      for (const item of action.creditItems) {
+        details.push(detailFromAction(action, "issueCredit", "failed", item.unitcountCent, 0, message, item));
+      }
+      onEvent?.(message);
       continue;
     }
     const userId = String(action.userId ?? "").trim();
@@ -173,15 +187,20 @@ export async function executeOperationPlan(client: OperationExecutorClient, plan
       const creditedKeys = new Set(credited.flatMap(rowIdentityKeys));
       if (actionIdentityKeys(action).some((key) => creditedKeys.has(key))) {
         skippedAlreadyIssuedCount += 1;
-        onEvent?.(`${action.studentName} 已发放 ${item.creditType}，跳过`);
+        const message = `${action.studentName} 已发放 ${item.creditType}，跳过`;
+        details.push(detailFromAction(action, "issueCredit", "skipped", item.unitcountCent, 0, message, item));
+        onEvent?.(message);
         continue;
       }
       const ok = await client.sendCredit(itemActivityId, item.creditId, [userId]);
       if (ok) {
         issueSuccessCount += 1;
-        onEvent?.(`已为 ${action.studentName} 发放 ${item.creditType}`);
+        const message = `已为 ${action.studentName} 发放 ${item.creditType}`;
+        details.push(detailFromAction(action, "issueCredit", "success", item.unitcountCent, item.unitcountCent, message, item));
+        onEvent?.(message);
       } else {
         failedCount += 1;
+        details.push(detailFromAction(action, "issueCredit", "failed", item.unitcountCent, 0, `${action.studentName} 发放 ${item.creditType} 失败`, item));
       }
     }
   }
@@ -192,6 +211,34 @@ export async function executeOperationPlan(client: OperationExecutorClient, plan
     abandonSuccessCount,
     skippedAlreadyIssuedCount,
     failedCount,
+    details,
+  };
+}
+
+function detailFromAction(
+  action: OperationAction,
+  detailAction: ExecutionDetail["action"],
+  status: ExecutionDetail["status"],
+  plannedValueCent: number,
+  actualValueCent: number,
+  message: string,
+  creditItem?: OperationAction["creditItems"][number],
+): ExecutionDetail {
+  return {
+    studentId: action.studentId,
+    studentName: action.studentName,
+    activityId: creditItem?.activityId || action.activityId,
+    activityName: creditItem?.activityName || action.activityName,
+    signUpId: action.signUpId,
+    userId: action.userId,
+    creditId: creditItem?.creditId,
+    scoreId: creditItem?.scoreId,
+    creditType: creditItem?.creditType,
+    plannedValueCent,
+    actualValueCent,
+    action: detailAction,
+    status,
+    message,
   };
 }
 

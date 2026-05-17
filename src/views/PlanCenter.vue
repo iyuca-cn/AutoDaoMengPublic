@@ -43,7 +43,10 @@
       <article v-if="selectedPlan" class="panel p-4">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 class="text-base font-semibold">{{ selectedPlan.name }}</h3>
+            <label class="grid max-w-xl gap-1">
+              <span class="label">计划标题</span>
+              <input class="field" v-model.trim="editablePlanName" :disabled="saving || !canEditCredit" />
+            </label>
             <p class="mt-1 text-sm text-slate-600">{{ statusLabel(selectedPlan.status) }} · {{ selectedPlan.generatedAt }}</p>
           </div>
           <div class="flex flex-wrap gap-2">
@@ -51,7 +54,11 @@
               <Download class="h-4 w-4" />
               导出摘要
             </a>
-            <button class="primary-button" type="button" :disabled="saving" @click="savePlan">
+            <a class="text-button" :href="downloadUrl(`/api/plans/${selectedPlan.id}/reports/details.xlsx`)">
+              <Download class="h-4 w-4" />
+              导出个人明细
+            </a>
+            <button class="primary-button" type="button" :disabled="saving || !canEditCredit" @click="savePlan">
               <Save class="h-4 w-4" />
               保存修改
             </button>
@@ -105,6 +112,10 @@
             <p class="mt-1 text-sm text-slate-600">{{ operationActivityLabel(selectedOperationPlan) }} · {{ statusLabel(selectedOperationPlan.status) }} · {{ selectedOperationPlan.createdAt }}</p>
           </div>
           <div class="flex flex-wrap gap-2">
+            <a class="text-button" :href="downloadUrl(`/api/operation-plans/${selectedOperationPlan.id}/reports/details.xlsx`)">
+              <Download class="h-4 w-4" />
+              导出个人明细
+            </a>
             <button class="danger-button" type="button" :disabled="saving || !canDeleteOperation" @click="deleteOperationPlan">
               <Trash2 class="h-4 w-4" />
               删除计划
@@ -147,6 +158,7 @@ const selectedPlan = ref<Plan | null>(null);
 const selectedOperationPlan = ref<OperationPlan | null>(null);
 const editableAllocations = ref<DemandAllocation[]>([]);
 const editableOperationActions = ref<OperationAction[]>([]);
+const editablePlanName = ref("");
 const editableOperationName = ref("");
 const error = ref("");
 const saving = ref(false);
@@ -160,6 +172,7 @@ const modes = [
 ];
 const canEditOperation = computed(() => Boolean(selectedOperationPlan.value && ["draft", "ready"].includes(selectedOperationPlan.value.status)));
 const canDeleteOperation = computed(() => Boolean(selectedOperationPlan.value && ["draft", "ready", "failed", "cancelled"].includes(selectedOperationPlan.value.status)));
+const canEditCredit = computed(() => Boolean(selectedPlan.value && ["draft", "ready"].includes(selectedPlan.value.status)));
 
 onMounted(load);
 
@@ -203,6 +216,7 @@ async function load() {
 
 function select(plan: Plan) {
   selectedPlan.value = plan;
+  editablePlanName.value = plan.name;
   editableAllocations.value = cloneEditable(plan.allocations);
 }
 
@@ -271,6 +285,8 @@ async function savePlan() {
   error.value = "";
   try {
     selectedPlan.value = await apiPatch<Plan>(`/api/plans/${selectedPlan.value.id}`, {
+      name: editablePlanName.value,
+      status: selectedPlan.value.status === "draft" ? "ready" : selectedPlan.value.status,
       allocations: cloneEditable(editableAllocations.value),
     });
     await load();
