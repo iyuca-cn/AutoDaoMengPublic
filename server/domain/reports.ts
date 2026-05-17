@@ -18,50 +18,13 @@ export function writePlanSummaryWorkbook(plan: Plan): ArrayBuffer {
       "全部已发": plan.summary.alreadyFullyIssuedCount,
     },
   ]), "计划摘要");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(plan.allocations.map((allocation) => ({
-    "学号": allocation.demand.studentId,
-    "姓名": allocation.demand.studentName,
-    "学分类型": allocation.demand.creditType,
-    "应发": formatCreditCent(allocation.demand.requestedValueCent),
-    "计划发": formatCreditCent(allocation.plannedValueCent),
-    "偏差": formatCreditCent(allocation.deltaCent),
-    "活动数": allocation.assignments.length,
-  }))), "分配明细");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(plan.notInAdmitList.map((demand) => ({
-    "学号": demand.studentId,
-    "姓名": demand.studentName,
-    "学分类型": demand.creditType,
-    "应发": formatCreditCent(demand.requestedValueCent),
-  }))), "不在录取名单");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(planDetailRows(plan)), "分配明细");
   return workbookToArrayBuffer(workbook);
 }
 
 export function writePlanDetailWorkbook(plan: Plan): ArrayBuffer {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(planDetailRows(plan)), "个人计划明细");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(plan.notInAdmitList.map((demand) => ({
-    "学号": demand.studentId,
-    "姓名": demand.studentName,
-    "学分类型": demand.creditType,
-    "应发学分": formatCreditCent(demand.requestedValueCent),
-    "说明": "不在录取名单",
-  }))), "不在录取名单");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(plan.preissued.alreadyPartiallyIssued.map((item) => ({
-    "学号": item.studentId,
-    "姓名": item.studentName,
-    "活动ID": item.activityId,
-    "活动名称": item.activityName,
-    "学分类型": item.creditType,
-    "说明": item.note,
-  }))), "部分已发");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(plan.preissued.alreadyFullyIssued.map((item) => ({
-    "学号": item.studentId,
-    "姓名": item.studentName,
-    "活动ID": item.activityId,
-    "活动名称": item.activityName,
-    "学分类型": item.creditType,
-    "说明": item.note,
-  }))), "全部已发");
   return workbookToArrayBuffer(workbook);
 }
 
@@ -86,11 +49,6 @@ export function writeOperationPlanDetailWorkbook(plan: OperationPlan): ArrayBuff
 
 export function writeExecutionWorkbook(task: ExecutionTask): ArrayBuffer {
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(task.events.map((event) => ({
-    "时间": event.time,
-    "级别": event.level,
-    "消息": event.message,
-  }))), "执行事件");
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([
     {
       "任务ID": task.id,
@@ -108,102 +66,128 @@ export function writeExecutionWorkbook(task: ExecutionTask): ArrayBuffer {
 }
 
 function operationPlanDetailRows(plan: OperationPlan): Array<Record<string, string | number>> {
-  return plan.actions.flatMap((action) => {
+  const records = plan.actions.flatMap((action) => {
     if (action.kind === "resign" || action.creditItems.length === 0) {
       return [{
-        "学号": action.studentId ?? "",
-        "姓名": action.studentName,
-        "活动ID": action.activityId,
-        "活动名称": action.activityName,
-        "报名ID": action.signUpId,
-        "用户ID": action.userId ?? "",
-        "动作": operationKindLabel(action.kind),
-        "启用": action.enabled ? "是" : "否",
-        "状态": action.status,
-        "学分项ID": "",
-        "分数项ID": "",
-        "学分类型": "",
-        "计划处理学分": formatCreditCent(0),
-        "备注": action.note ?? "",
+        studentId: action.studentId ?? "",
+        studentName: action.studentName,
+        requestedValueCent: 0,
+        plannedValueCent: 0,
+        actualValueCent: 0,
+        activity: action.activityName,
+        creditType: "",
+        detail: [
+          `${action.activityName} ${operationKindLabel(action.kind)}`,
+          `报名ID ${action.signUpId}`,
+          `启用 ${action.enabled ? "是" : "否"}`,
+          `状态 ${action.status}`,
+          action.note ? `备注 ${action.note}` : "",
+        ].filter(Boolean).join("；"),
       }];
     }
     return action.creditItems.map((item) => ({
-      "学号": action.studentId ?? "",
-      "姓名": action.studentName,
-      "活动ID": item.activityId || action.activityId,
-      "活动名称": item.activityName || action.activityName,
-      "报名ID": action.signUpId,
-      "用户ID": action.userId ?? "",
-      "动作": operationKindLabel(action.kind),
-      "启用": action.enabled ? "是" : "否",
-      "状态": action.status,
-      "学分项ID": item.creditId,
-      "分数项ID": item.scoreId,
-      "学分类型": item.creditType,
-      "计划处理学分": formatCreditCent(item.unitcountCent),
-      "备注": action.note ?? "",
+      studentId: action.studentId ?? "",
+      studentName: action.studentName,
+      requestedValueCent: 0,
+      plannedValueCent: item.unitcountCent,
+      actualValueCent: 0,
+      activity: item.activityName || action.activityName,
+      creditType: item.creditType,
+      detail: [
+        `${item.activityName || action.activityName} ${operationKindLabel(action.kind)} ${item.creditType} ${formatCreditCent(item.unitcountCent)}`,
+        `学分项ID ${item.creditId}`,
+        `分数项ID ${item.scoreId}`,
+        `报名ID ${action.signUpId}`,
+        action.userId ? `用户ID ${action.userId}` : "",
+        `启用 ${action.enabled ? "是" : "否"}`,
+        `状态 ${action.status}`,
+        action.note ? `备注 ${action.note}` : "",
+      ].filter(Boolean).join("；"),
     }));
   });
+  return groupRowsByPerson(records);
 }
 
 function planDetailRows(plan: Plan): Array<Record<string, string | number>> {
-  return plan.allocations.flatMap((allocation) => {
+  const allocationRecords = plan.allocations.flatMap((allocation) => {
     if (!allocation.enabled) {
       return [{
-        "学号": allocation.demand.studentId,
-        "姓名": allocation.demand.studentName,
-        "需求学分类型": allocation.demand.creditType,
-        "应发学分": formatCreditCent(allocation.demand.requestedValueCent),
-        "计划学分": formatCreditCent(0),
-        "偏差": formatCreditCent(-allocation.demand.requestedValueCent),
-        "活动ID": "",
-        "活动名称": "",
-        "学分项ID": "",
-        "分数项ID": "",
-        "计划发放学分类型": "",
-        "计划发放学分": formatCreditCent(0),
-        "报名ID": "",
-        "用户ID": "",
-        "状态": "已停用",
+        studentId: allocation.demand.studentId,
+        studentName: allocation.demand.studentName,
+        requestedValueCent: allocation.demand.requestedValueCent,
+        plannedValueCent: 0,
+        actualValueCent: 0,
+        activity: "",
+        creditType: allocation.demand.creditType,
+        detail: `${allocation.demand.creditType} 应发 ${formatCreditCent(allocation.demand.requestedValueCent)}：已停用`,
       }];
     }
     if (allocation.assignments.length === 0) {
       return [{
-        "学号": allocation.demand.studentId,
-        "姓名": allocation.demand.studentName,
-        "需求学分类型": allocation.demand.creditType,
-        "应发学分": formatCreditCent(allocation.demand.requestedValueCent),
-        "计划学分": formatCreditCent(0),
-        "偏差": formatCreditCent(allocation.deltaCent),
-        "活动ID": "",
-        "活动名称": "",
-        "学分项ID": "",
-        "分数项ID": "",
-        "计划发放学分类型": "",
-        "计划发放学分": formatCreditCent(0),
-        "报名ID": "",
-        "用户ID": "",
-        "状态": "未分配",
+        studentId: allocation.demand.studentId,
+        studentName: allocation.demand.studentName,
+        requestedValueCent: allocation.demand.requestedValueCent,
+        plannedValueCent: 0,
+        actualValueCent: 0,
+        activity: "",
+        creditType: allocation.demand.creditType,
+        detail: `${allocation.demand.creditType} 应发 ${formatCreditCent(allocation.demand.requestedValueCent)}：未分配，偏差 ${formatCreditCent(allocation.deltaCent)}`,
       }];
     }
     return allocation.assignments.flatMap((assignment) => assignment.bundle.creditItems.map((creditItem) => ({
-      "学号": allocation.demand.studentId,
-      "姓名": allocation.demand.studentName,
-      "需求学分类型": allocation.demand.creditType,
-      "应发学分": formatCreditCent(allocation.demand.requestedValueCent),
-      "计划学分": formatCreditCent(allocation.plannedValueCent),
-      "偏差": formatCreditCent(allocation.deltaCent),
-      "活动ID": assignment.bundle.activityId,
-      "活动名称": assignment.bundle.activityName,
-      "学分项ID": creditItem.creditId,
-      "分数项ID": creditItem.scoreId,
-      "计划发放学分类型": creditItem.creditType,
-      "计划发放学分": formatCreditCent(creditItem.unitcountCent),
-      "报名ID": assignment.signUpId,
-      "用户ID": assignment.userId,
-      "状态": "计划发放",
-    })));
+      studentId: allocation.demand.studentId,
+      studentName: allocation.demand.studentName,
+      requestedValueCent: 0,
+      plannedValueCent: creditItem.unitcountCent,
+      actualValueCent: 0,
+      activity: assignment.bundle.activityName,
+      creditType: creditItem.creditType,
+      detail: [
+        `${assignment.bundle.activityName} ${creditItem.creditType} 计划发放 ${formatCreditCent(creditItem.unitcountCent)}`,
+        `需求 ${allocation.demand.creditType} 应发 ${formatCreditCent(allocation.demand.requestedValueCent)}`,
+        `计划合计 ${formatCreditCent(allocation.plannedValueCent)}`,
+        `偏差 ${formatCreditCent(allocation.deltaCent)}`,
+        `学分项ID ${creditItem.creditId}`,
+        `分数项ID ${creditItem.scoreId}`,
+        `报名ID ${assignment.signUpId}`,
+        `用户ID ${assignment.userId}`,
+      ].join("；"),
+    }))).map((record, index) => ({
+      ...record,
+      requestedValueCent: index === 0 ? allocation.demand.requestedValueCent : 0,
+    }));
   });
+  const notInAdmitRecords = plan.notInAdmitList.map((demand) => ({
+    studentId: demand.studentId,
+    studentName: demand.studentName,
+    requestedValueCent: 0,
+    plannedValueCent: 0,
+    actualValueCent: 0,
+    activity: "",
+    creditType: demand.creditType,
+    detail: `${demand.creditType}：不在录取名单`,
+  }));
+  const partiallyIssuedRecords = plan.preissued.alreadyPartiallyIssued.map((item) => ({
+    studentId: item.studentId,
+    studentName: item.studentName,
+    requestedValueCent: 0,
+    plannedValueCent: 0,
+    actualValueCent: 0,
+    activity: item.activityName,
+    creditType: item.creditType,
+    detail: `${item.activityName} ${item.creditType}：${item.note}`,
+  }));
+  const fullyIssuedRecords = plan.preissued.alreadyFullyIssued.map((item) => ({
+    studentId: item.studentId,
+    studentName: item.studentName,
+    requestedValueCent: 0,
+    plannedValueCent: 0,
+    actualValueCent: 0,
+    activity: item.activityName,
+    creditType: item.creditType,
+    detail: `${item.activityName} ${item.creditType}：${item.note}`,
+  }));
+  return groupRowsByPerson([...allocationRecords, ...notInAdmitRecords, ...partiallyIssuedRecords, ...fullyIssuedRecords]);
 }
 
 function executionDetailRows(details: ExecutionDetail[]): Array<Record<string, string | number>> {
@@ -221,21 +205,91 @@ function executionDetailRows(details: ExecutionDetail[]): Array<Record<string, s
       "说明": "暂无个人级执行明细",
     }];
   }
-  return details.map((detail) => ({
-    "学号": detail.studentId ?? "",
-    "姓名": detail.studentName,
-    "活动ID": detail.activityId,
-    "活动名称": detail.activityName,
-    "报名ID": detail.signUpId ?? "",
-    "用户ID": detail.userId ?? "",
-    "学分项ID": detail.creditId ?? "",
-    "分数项ID": detail.scoreId ?? "",
-    "动作": actionLabel(detail.action),
-    "状态": detailStatusLabel(detail.status),
-    "学分类型": detail.creditType ?? "",
-    "计划处理学分": formatCreditCent(detail.plannedValueCent),
-    "实际处理学分": formatCreditCent(detail.actualValueCent),
-    "说明": detail.message,
+  return groupRowsByPerson(details.map((detail) => ({
+    studentId: detail.studentId ?? "",
+    studentName: detail.studentName,
+    requestedValueCent: 0,
+    plannedValueCent: detail.plannedValueCent,
+    actualValueCent: detail.actualValueCent,
+    activity: detail.activityName,
+    creditType: detail.creditType ?? "",
+    detail: [
+      `${detail.activityName} ${actionLabel(detail.action)} ${detail.creditType ?? ""}`.trim(),
+      `状态 ${detailStatusLabel(detail.status)}`,
+      `计划 ${formatCreditCent(detail.plannedValueCent)}`,
+      `实际 ${formatCreditCent(detail.actualValueCent)}`,
+      detail.creditId ? `学分项ID ${detail.creditId}` : "",
+      detail.scoreId ? `分数项ID ${detail.scoreId}` : "",
+      detail.signUpId ? `报名ID ${detail.signUpId}` : "",
+      detail.userId ? `用户ID ${detail.userId}` : "",
+      detail.message,
+    ].filter(Boolean).join("；"),
+  })));
+}
+
+interface PersonAggregateInput {
+  studentId?: string;
+  studentName: string;
+  requestedValueCent: number;
+  plannedValueCent: number;
+  actualValueCent: number;
+  activity: string;
+  creditType: string;
+  detail: string;
+}
+
+interface PersonAggregate {
+  studentId: string;
+  studentName: string;
+  requestedValueCent: number;
+  plannedValueCent: number;
+  actualValueCent: number;
+  activities: Set<string>;
+  creditTypes: Set<string>;
+  details: string[];
+}
+
+function groupRowsByPerson(records: PersonAggregateInput[]): Array<Record<string, string | number>> {
+  const groups = new Map<string, PersonAggregate>();
+  for (const record of records) {
+    const studentId = String(record.studentId ?? "").trim();
+    const studentName = record.studentName.trim();
+    const key = studentId || studentName;
+    const existing = groups.get(key) ?? {
+      studentId,
+      studentName,
+      requestedValueCent: 0,
+      plannedValueCent: 0,
+      actualValueCent: 0,
+      activities: new Set<string>(),
+      creditTypes: new Set<string>(),
+      details: [],
+    };
+    existing.studentId ||= studentId;
+    existing.studentName ||= studentName;
+    existing.requestedValueCent += record.requestedValueCent;
+    existing.plannedValueCent += record.plannedValueCent;
+    existing.actualValueCent += record.actualValueCent;
+    if (record.activity) {
+      existing.activities.add(record.activity);
+    }
+    if (record.creditType) {
+      existing.creditTypes.add(record.creditType);
+    }
+    if (record.detail) {
+      existing.details.push(record.detail);
+    }
+    groups.set(key, existing);
+  }
+  return [...groups.values()].map((group) => ({
+    "学号": group.studentId,
+    "姓名": group.studentName,
+    "应发学分合计": formatCreditCent(group.requestedValueCent),
+    "计划处理学分合计": formatCreditCent(group.plannedValueCent),
+    "实际处理学分合计": formatCreditCent(group.actualValueCent),
+    "活动汇总": [...group.activities].join("；"),
+    "学分类型汇总": [...group.creditTypes].join("；"),
+    "明细说明": group.details.join("\n"),
   }));
 }
 

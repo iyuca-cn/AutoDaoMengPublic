@@ -4,49 +4,56 @@ import { writeExecutionWorkbook, writeOperationPlanDetailWorkbook, writePlanDeta
 import type { ExecutionTask, OperationPlan, Plan } from "../../server/domain/models";
 
 describe("reports", () => {
-  it("exports per-person plan details down to credit item value", () => {
+  it("exports plan details with one row per person and all plan info in that row", () => {
     const sheets = readWorkbook(writePlanDetailWorkbook(plan()));
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheets.Sheets["个人计划明细"]);
 
     expect(sheets.SheetNames).toContain("个人计划明细");
+    expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       "学号": "20250001",
       "姓名": "张三",
-      "活动ID": "activity-1",
-      "活动名称": "活动一",
-      "计划发放学分类型": "美育实践学分",
-      "计划发放学分": "0.50",
+      "应发学分合计": "1.00",
+      "计划处理学分合计": "1.00",
+      "活动汇总": "活动一；活动二",
+      "学分类型汇总": "美育实践学分；思想成长学分",
     });
+    expect(String(rows[0]["明细说明"])).toContain("活动一");
+    expect(String(rows[0]["明细说明"])).toContain("活动二");
   });
 
-  it("exports per-person execution details with actual credit value", () => {
+  it("exports execution details with one row per person and actual credit value total", () => {
     const sheets = readWorkbook(writeExecutionWorkbook(task()));
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheets.Sheets["个人执行明细"]);
 
     expect(sheets.SheetNames).toContain("个人执行明细");
+    expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       "学号": "20250001",
       "姓名": "张三",
-      "活动ID": "activity-1",
-      "动作": "发放学分",
-      "状态": "成功",
-      "计划处理学分": "0.50",
-      "实际处理学分": "0.50",
+      "计划处理学分合计": "1.00",
+      "实际处理学分合计": "1.00",
+      "活动汇总": "活动一；活动二",
     });
+    expect(String(rows[0]["明细说明"])).toContain("活动一");
+    expect(String(rows[0]["明细说明"])).toContain("活动二");
   });
 
-  it("exports per-person operation plan details with planned credit value", () => {
+  it("exports operation plan details with one row per person", () => {
     const sheets = readWorkbook(writeOperationPlanDetailWorkbook(operationPlan()));
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheets.Sheets["个人操作计划明细"]);
 
     expect(sheets.SheetNames).toContain("个人操作计划明细");
+    expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       "学号": "20250001",
       "姓名": "张三",
-      "动作": "发放学分",
-      "学分类型": "思想成长学分",
-      "计划处理学分": "0.50",
+      "计划处理学分合计": "1.00",
+      "活动汇总": "活动一；活动二",
+      "学分类型汇总": "思想成长学分；美育实践学分",
     });
+    expect(String(rows[0]["明细说明"])).toContain("活动一");
+    expect(String(rows[0]["明细说明"])).toContain("活动二");
   });
 });
 
@@ -66,27 +73,34 @@ function task(): ExecutionTask {
     events: [],
     result: {
       resignSuccessCount: 0,
-      issueSuccessCount: 1,
+      issueSuccessCount: 2,
       abandonSuccessCount: 0,
       skippedAlreadyIssuedCount: 0,
       failedCount: 0,
-      details: [{
-        studentId: "20250001",
-        studentName: "张三",
-        activityId: "activity-1",
-        activityName: "活动一",
-        signUpId: "signup-1",
-        userId: "user-1",
-        creditId: "credit-1",
-        scoreId: "score-1",
-        creditType: "美育实践学分",
-        plannedValueCent: 50,
-        actualValueCent: 50,
-        action: "issueCredit",
-        status: "success",
-        message: "已为 张三 发放 美育实践学分",
-      }],
+      details: [
+        executionDetail("activity-1", "活动一", "credit-1", "score-1", "美育实践学分"),
+        executionDetail("activity-2", "活动二", "credit-2", "score-2", "思想成长学分"),
+      ],
     },
+  };
+}
+
+function executionDetail(activityId: string, activityName: string, creditId: string, scoreId: string, creditType: "美育实践学分" | "思想成长学分"): ExecutionTask["result"]["details"][number] {
+  return {
+    studentId: "20250001",
+    studentName: "张三",
+    activityId,
+    activityName,
+    signUpId: `signup-${activityId}`,
+    userId: "user-1",
+    creditId,
+    scoreId,
+    creditType,
+    plannedValueCent: 50,
+    actualValueCent: 50,
+    action: "issueCredit",
+    status: "success",
+    message: `已为 张三 发放 ${creditType}`,
   };
 }
 
@@ -101,48 +115,21 @@ function plan(): Plan {
       studentId: "20250001",
       studentName: "张三",
       creditType: "美育实践学分",
-      requestedValueCent: 50,
+      requestedValueCent: 100,
     }],
-    activities: [{
-      activityId: "activity-1",
-      activityName: "活动一",
-      creditType: "美育实践学分",
-      bundleValueCent: 50,
-      bundleCapacity: 10,
-      creditItems: [{
-        creditId: "credit-1",
-        scoreId: "score-1",
-        creditType: "美育实践学分",
-        unitcountCent: 50,
-        remainingCapacity: 10,
-      }],
-    }],
+    activities: [],
     allocations: [{
       demand: {
         studentId: "20250001",
         studentName: "张三",
         creditType: "美育实践学分",
-        requestedValueCent: 50,
+        requestedValueCent: 100,
       },
-      assignments: [{
-        bundle: {
-          activityId: "activity-1",
-          activityName: "活动一",
-          creditType: "美育实践学分",
-          bundleValueCent: 50,
-          bundleCapacity: 10,
-          creditItems: [{
-            creditId: "credit-1",
-            scoreId: "score-1",
-            creditType: "美育实践学分",
-            unitcountCent: 50,
-            remainingCapacity: 10,
-          }],
-        },
-        signUpId: "signup-1",
-        userId: "user-1",
-      }],
-      plannedValueCent: 50,
+      assignments: [
+        planAssignment("activity-1", "活动一", "credit-1", "score-1", "美育实践学分"),
+        planAssignment("activity-2", "活动二", "credit-2", "score-2", "思想成长学分"),
+      ],
+      plannedValueCent: 100,
       deltaCent: 0,
       enabled: true,
     }],
@@ -154,8 +141,8 @@ function plan(): Plan {
     summary: {
       demandCount: 1,
       studentCount: 1,
-      activityCount: 1,
-      plannedIssueCount: 1,
+      activityCount: 2,
+      plannedIssueCount: 2,
       notInAdmitCount: 0,
       underIssuedCount: 0,
       overIssuedCount: 0,
@@ -163,6 +150,27 @@ function plan(): Plan {
       alreadyFullyIssuedCount: 0,
     },
     auditLogs: [],
+  };
+}
+
+function planAssignment(activityId: string, activityName: string, creditId: string, scoreId: string, creditType: "美育实践学分" | "思想成长学分"): Plan["allocations"][number]["assignments"][number] {
+  return {
+    bundle: {
+      activityId,
+      activityName,
+      creditType,
+      bundleValueCent: 50,
+      bundleCapacity: 10,
+      creditItems: [{
+        creditId,
+        scoreId,
+        creditType,
+        unitcountCent: 50,
+        remainingCapacity: 10,
+      }],
+    },
+    signUpId: `signup-${activityId}`,
+    userId: "user-1",
   };
 }
 
@@ -187,27 +195,34 @@ function operationPlan(): OperationPlan {
       userId: "user-1",
       enabled: true,
       status: "planned",
-      creditItems: [{
-        activityId: "activity-1",
-        activityName: "活动一",
-        creditId: "credit-1",
-        scoreId: "score-1",
-        creditType: "思想成长学分",
-        unitcountCent: 50,
-        totalCapacity: 10,
-        issuedCount: 0,
-        remainingCapacity: 10,
-      }],
+      creditItems: [
+        operationCreditItem("activity-1", "活动一", "credit-1", "score-1", "思想成长学分"),
+        operationCreditItem("activity-2", "活动二", "credit-2", "score-2", "美育实践学分"),
+      ],
     }],
     summary: {
       actionCount: 1,
       enabledCount: 1,
       targetMemberCount: 1,
-      targetCreditItemCount: 1,
+      targetCreditItemCount: 2,
       expectedResignCount: 0,
-      expectedIssueCount: 1,
+      expectedIssueCount: 2,
       expectedAbandonCount: 0,
     },
     auditLogs: [],
+  };
+}
+
+function operationCreditItem(activityId: string, activityName: string, creditId: string, scoreId: string, creditType: "美育实践学分" | "思想成长学分"): OperationPlan["actions"][number]["creditItems"][number] {
+  return {
+    activityId,
+    activityName,
+    creditId,
+    scoreId,
+    creditType,
+    unitcountCent: 50,
+    totalCapacity: 10,
+    issuedCount: 0,
+    remainingCapacity: 10,
   };
 }
